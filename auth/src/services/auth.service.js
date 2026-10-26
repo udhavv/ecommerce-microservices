@@ -464,8 +464,16 @@ export async function loginUser({ email, password }) {
   const roles = await getUserRoles(pool, user.id);
   const userWithRoles = { ...user, roles };
 
-  const accessToken = generateAccessToken(userWithRoles);
-  const refreshToken = generateRefreshToken(userWithRoles);
+  const tokenPayload = {
+    id: user.id,
+    sub: user.id,
+    email: user.email,
+    displayName: user.display_name,
+    roles,
+  };
+
+  const accessToken = generateAccessToken(tokenPayload);
+  const refreshToken = generateRefreshToken();
   const refreshTokenExpiry = getRefreshTokenExpiry();
 
   await pool.query(
@@ -529,8 +537,16 @@ export async function refreshUserSession(refreshToken) {
     const roles = await getUserRoles(client, user.user_id);
     const userWithRoles = { ...user, id: user.user_id, roles };
 
-    const accessToken = generateAccessToken(userWithRoles);
-    const newRefreshToken = generateRefreshToken(userWithRoles);
+    const tokenPayload = {
+      id: user.user_id,
+      sub: user.user_id,
+      email: user.email,
+      displayName: user.display_name,
+      roles,
+    };
+
+    const accessToken = generateAccessToken(tokenPayload);
+    const newRefreshToken = generateRefreshToken();
     const expiry = getRefreshTokenExpiry();
 
     await client.query(

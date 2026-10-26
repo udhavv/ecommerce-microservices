@@ -11,6 +11,7 @@ import {
 } from '../services/auth.service.js';
 import env from '../config/env.js';
 import logger from '../utils/logger.js';
+import { getExpiryMs } from '../utils/token.js';
 
 const isProduction = env.nodeEnv === 'production';
 
@@ -24,12 +25,12 @@ const cookieBase = {
 const setAuthCookies = (res, accessToken, refreshToken) => {
   res.cookie('accessToken', accessToken, {
     ...cookieBase,
-    maxAge: 15 * 60 * 1000,
+    maxAge: getExpiryMs(env.jwt.accessExpiry, 15 * 60 * 1000),
   });
 
   res.cookie('refreshToken', refreshToken, {
     ...cookieBase,
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    maxAge: getExpiryMs(env.jwt.refreshExpiry, 7 * 24 * 60 * 60 * 1000),
   });
 };
 

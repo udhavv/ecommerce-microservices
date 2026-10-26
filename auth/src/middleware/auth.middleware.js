@@ -1,15 +1,37 @@
-
-import { verifyAccessToken } from '../utils/token.js';
+import { verifyAccessToken, getExpiryMs } from '../utils/token.js';
 import { pool } from '../config/db.js';
+import env from '../config/env.js';
 import logger from '../utils/logger.js';
+import { refreshUserSession } from '../services/auth.service.js';
 
-export function authenticate(req, res, next) {
+/**
+ * Extract token flexibly from Authorization header or cookies
+ */
+export function extractToken(req) {
   const authHeader = req.headers.authorization;
 
-  // Prefer an explicitly supplied Bearer token; otherwise use the cookie.
-  const token = authHeader?.startsWith('Bearer ')
-    ? authHeader.slice(7).trim()
-    : req.cookies?.accessToken;
+  if (authHeader) {
+    const cleanHeader = authHeader.trim().replace(/^["']|["']$/g, '');
+    const match = cleanHeader.match(/^bearer\s+(.+)$/i);
+    if (match) {
+      return match[1].trim().replace(/^["']|["']$/g, '');
+    }
+    // Handle raw JWT pasted into Authorization header without "Bearer "
+    if (cleanHeader.split('.').length === 3) {
+      return cleanHeader;
+    }
+  }
+
+  // Fallback to cookie
+  if (req.cookies?.accessToken) {
+    return req.cookies.accessToken.trim().replace(/^["']|["']$/g, '');
+  }
+
+  return null;
+}
+
+export async function authenticate(req, res, next) {
+  const token = extractToken(req);
 
   if (!token) {
     return res.status(401).json({
@@ -19,7 +41,6 @@ export function authenticate(req, res, next) {
 
   try {
     const decoded = verifyAccessToken(token);
-
     const userId = decoded.sub ?? decoded.id;
 
     if (!userId) {
@@ -36,8 +57,48 @@ export function authenticate(req, res, next) {
     return next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
+      // Automatic recovery: Check if a refresh token is present in cookies or headers
+      const refreshToken = req.cookies?.refreshToken || req.headers['x-refresh-token'];
+
+      if (refreshToken) {
+        try {
+          const { user, accessToken: newAccessToken, refreshToken: newRefreshToken } =
+            await refreshUserSession(refreshToken);
+
+          const isProduction = env.nodeEnv === 'production';
+          const cookieBase = {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: isProduction ? 'none' : 'lax',
+            path: '/',
+          };
+
+          res.cookie('accessToken', newAccessToken, {
+            ...cookieBase,
+            maxAge: getExpiryMs(env.jwt.accessExpiry, 15 * 60 * 1000),
+          });
+
+          res.cookie('refreshToken', newRefreshToken, {
+            ...cookieBase,
+            maxAge: getExpiryMs(env.jwt.refreshExpiry, 7 * 24 * 60 * 60 * 1000),
+          });
+
+          res.setHeader('x-access-token', newAccessToken);
+
+          req.user = {
+            ...user,
+            id: user.id,
+          };
+
+          return next();
+        } catch (refreshErr) {
+          logger.debug({ err: refreshErr }, 'Automatic token refresh on expired access token failed');
+        }
+      }
+
       return res.status(401).json({
         error: 'Access token has expired',
+        code: 'TOKEN_EXPIRED',
       });
     }
 

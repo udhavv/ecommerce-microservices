@@ -1,5 +1,7 @@
 import { jest } from '@jest/globals';
+import jwt from 'jsonwebtoken';
 import request from 'supertest';
+import env from '../../config/env.js';
 import { mockPool, resetDatabase, tables } from '../helpers/mock-db.js';
 
 let lastSentVerificationToken = null;
@@ -172,6 +174,24 @@ describe('Auth Microservice - End-to-End Integration Tests', () => {
       expect(res.body.data.user.emailVerifiedAt).not.toBeNull();
     });
 
+    it('GET /api/auth/profile should accept lowercase "bearer" token', async () => {
+      const res = await request(app)
+        .get('/api/auth/profile')
+        .set('Authorization', `bearer ${accessToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+
+    it('GET /api/auth/profile should accept accessToken from cookies', async () => {
+      const res = await request(app)
+        .get('/api/auth/profile')
+        .set('Cookie', [`accessToken=${accessToken}`]);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+
     it('GET /api/auth/profile should reject requests without token with 401', async () => {
       const res = await request(app).get('/api/auth/profile');
       expect(res.status).toBe(401);
@@ -185,6 +205,21 @@ describe('Auth Microservice - End-to-End Integration Tests', () => {
 
       expect(res.status).toBe(401);
       expect(res.body.error).toBe('Invalid access token');
+    });
+
+    it('GET /api/auth/profile should transparently recover when accessToken is expired if refreshToken is present', async () => {
+      const expiredToken = jwt.sign({ id: 'u-1', sub: 'u-1' }, env.jwt.accessSecret, {
+        expiresIn: '-60s',
+      });
+
+      const res = await request(app)
+        .get('/api/auth/profile')
+        .set('Authorization', `Bearer ${expiredToken}`)
+        .set('Cookie', [`refreshToken=${refreshToken}`]);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.headers['x-access-token']).toBeDefined();
     });
 
     it('POST /api/auth/refresh should issue new tokens', async () => {
