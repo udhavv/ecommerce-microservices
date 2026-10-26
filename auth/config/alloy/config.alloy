@@ -1,0 +1,51 @@
+// Grafana Alloy Configuration for ingesting Auth Microservice logs and pushing to Grafana Cloud Loki
+
+// Target log files or container logs
+local.file_match "auth_logs" {
+  path_targets = [
+    { "__path__" = "./logs/*.log", "service" = "auth-service" },
+  ]
+}
+
+// Scrape local log files
+loki.source.file "auth_files" {
+  targets    = local.file_match.auth_logs.targets
+  forward_to = [loki.process.auth_logs.receiver]
+}
+
+// Parse structured JSON logs from Pino
+loki.process "auth_logs" {
+  stage.json {
+    expressions = {
+      level    = "level",
+      service  = "service",
+      env      = "env",
+      method   = "method",
+      url      = "url",
+      status   = "status",
+      duration = "duration",
+      msg      = "msg",
+    }
+  }
+
+  stage.labels {
+    values = {
+      level   = "level",
+      service = "service",
+      env     = "env",
+    }
+  }
+
+  forward_to = [loki.write.grafana_cloud.receiver]
+}
+
+// Send logs to Grafana Cloud Loki
+loki.write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_LOKI_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_LOKI_USER")
+      password = sys.env("GRAFANA_CLOUD_API_TOKEN")
+    }
+  }
+}

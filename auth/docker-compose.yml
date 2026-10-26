@@ -1,0 +1,76 @@
+services:
+  # ============================================================================
+  # PostgreSQL Database Service
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: auth-postgres-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-auth_db}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres_secure_pass}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      # Automatically initialize database tables on first launch
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-auth_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - auth_internal_network
+
+  # ============================================================================
+  # Auth Microservice (Production)
+  # ============================================================================
+  auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auth-service-prod
+    restart: unless-stopped
+    ports:
+      - "${PORT:-4000}:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres_secure_pass}@postgres:5432/${DB_NAME:-auth_db}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-prod_jwt_access_secret_change_me}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-prod_jwt_refresh_secret_change_me}
+      JWT_ACCESS_EXPIRY: ${JWT_ACCESS_EXPIRY:-15m}
+      JWT_REFRESH_EXPIRY: ${JWT_REFRESH_EXPIRY:-7d}
+      VERSION: ${VERSION:-1.0.0}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://houseplant-frontend-qv6m.vercel.app}
+      PRODUCTION_FRONTEND_URL: ${PRODUCTION_FRONTEND_URL:-https://houseplant-frontend-qv6m.vercel.app}
+      HOST: ${HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      GRAFANA_CLOUD_LOKI_URL: ${GRAFANA_CLOUD_LOKI_URL}
+      GRAFANA_CLOUD_LOKI_USER: ${GRAFANA_CLOUD_LOKI_USER}
+      GRAFANA_CLOUD_API_TOKEN: ${GRAFANA_CLOUD_API_TOKEN}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - auth_internal_network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+volumes:
+  postgres_prod_data:
+    name: auth_postgres_prod_data
+
+networks:
+  auth_internal_network:
+    name: auth_internal_network
+    driver: bridge

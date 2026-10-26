@@ -1,0 +1,37 @@
+{
+  "name": "auth",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js src/__tests__/unit --runInBand",
+    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js src/__tests__/integration --runInBand",
+    "dev": "nodemon src/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^10.2.1",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.5.2",
+    "nodemon": "^3.1.14",
+    "pino-pretty": "^13.2.0",
+    "supertest": "^7.3.1"
+  }
+}

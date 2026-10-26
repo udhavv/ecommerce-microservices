@@ -1,0 +1,22 @@
+# Development Dockerfile for Auth Microservice
+FROM node:20-alpine
+
+# Install build tools required for native modules like bcrypt
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+# Copy package descriptors
+COPY package*.json ./
+
+# Install all dependencies (including devDependencies for nodemon, jest, etc.)
+RUN npm install
+
+# Copy application source
+COPY . .
+
+# Expose microservice port
+EXPOSE 4000
+
+# Start development server with live reload
+CMD ["npm", "run", "dev"]

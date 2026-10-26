@@ -1,0 +1,60 @@
+services:
+  # ============================================================================
+  # PostgreSQL Database Service (Development)
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: auth-postgres-dev
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-test1}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-hellowpin1}
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-test1}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - auth_dev_network
+
+  # ============================================================================
+  # Auth Microservice (Development with Hot Reloading)
+  # ============================================================================
+  auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: auth-service-dev
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./src:/app/src
+      - ./database:/app/database
+      - /app/node_modules
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-hellowpin1}@postgres:5432/${DB_NAME:-test1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - auth_dev_network
+
+volumes:
+  postgres_dev_data:
+    name: auth_postgres_dev_data
+
+networks:
+  auth_dev_network:
+    name: auth_dev_network
+    driver: bridge
