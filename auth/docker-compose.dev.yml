@@ -5,18 +5,22 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: auth-postgres-dev
-    restart: always
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "5432:5432"
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: ${DB_NAME:-test1}
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-hellowpin1}
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_dev_data:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-test1}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -32,8 +36,10 @@ services:
       dockerfile: Dockerfile.dev
     container_name: auth-service-dev
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     ports:
-      - "4000:4000"
+      - "${PORT}:4000"
     volumes:
       - ./src:/app/src
       - ./database:/app/database
@@ -41,9 +47,30 @@ services:
     env_file:
       - .env
     environment:
-      NODE_ENV: development
-      PORT: 4000
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-hellowpin1}@postgres:5432/${DB_NAME:-test1}
+      - NODE_ENV
+      - PORT
+      - DATABASE_URL
+      - DB_NAME
+      - DB_USER
+      - DB_PASSWORD
+      - DB_SSL
+      - DB_POOL_MAX
+      - JWT_ACCESS_SECRET
+      - JWT_REFRESH_SECRET
+      - JWT_ACCESS_EXPIRY
+      - JWT_REFRESH_EXPIRY
+      - VERSION
+      - PRODUCTION_FRONTEND_URL
+      - FRONTEND_URL_DEVELOPMENT
+      - HOST
+      - MAIL_PORT
+      - SMTP_USER
+      - SMTP_PASS
+      - MAIL_FROM
+      - BACKEND_URL
+      - GRAFANA_CLOUD_LOKI_URL
+      - GRAFANA_CLOUD_LOKI_USER
+      - GRAFANA_CLOUD_API_TOKEN
     depends_on:
       postgres:
         condition: service_healthy

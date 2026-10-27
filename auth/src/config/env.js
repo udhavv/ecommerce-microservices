@@ -18,7 +18,7 @@ const env = {
     refreshExpiry: cleanStr(process.env.JWT_REFRESH_EXPIRY) || '7d',
   },
   cors: {
-    origin: cleanStr(process.env.CORS_ORIGIN) || (isProduction ? cleanStr(process.env.PRODUCTION_FRONTEND_URL) : cleanStr(process.env.FRONTEND_URL_DEVELOPMENT)) || 'http://localhost:3000',
+    origin: (isProduction ? cleanStr(process.env.PRODUCTION_FRONTEND_URL) : cleanStr(process.env.FRONTEND_URL_DEVELOPMENT)) || 'http://localhost:3000',
   },
   version: {
     ver: cleanStr(process.env.VERSION) || '1.0.0',

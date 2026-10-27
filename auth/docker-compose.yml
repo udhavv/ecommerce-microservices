@@ -7,15 +7,15 @@ services:
     container_name: auth-postgres-prod
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-auth_db}
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres_secure_pass}
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
       # Automatically initialize database tables on first launch
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-auth_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -37,14 +37,13 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres_secure_pass}@postgres:5432/${DB_NAME:-auth_db}
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-prod_jwt_access_secret_change_me}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-prod_jwt_refresh_secret_change_me}
-      JWT_ACCESS_EXPIRY: ${JWT_ACCESS_EXPIRY:-15m}
-      JWT_REFRESH_EXPIRY: ${JWT_REFRESH_EXPIRY:-7d}
-      VERSION: ${VERSION:-1.0.0}
-      CORS_ORIGIN: ${CORS_ORIGIN:-https://houseplant-frontend-qv6m.vercel.app}
-      PRODUCTION_FRONTEND_URL: ${PRODUCTION_FRONTEND_URL:-https://houseplant-frontend-qv6m.vercel.app}
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRY: ${JWT_ACCESS_EXPIRY}
+      JWT_REFRESH_EXPIRY: ${JWT_REFRESH_EXPIRY}
+      VERSION: ${VERSION}
+      PRODUCTION_FRONTEND_URL: ${PRODUCTION_FRONTEND_URL}
       HOST: ${HOST:-smtp.gmail.com}
       MAIL_PORT: ${MAIL_PORT:-587}
       SMTP_USER: ${SMTP_USER}

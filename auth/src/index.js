@@ -22,6 +22,8 @@ const corsOrigins = env.cors.origin
   ? env.cors.origin.split(',').map((o) => o.trim())
   : ['http://localhost:3000'];
 
+
+  
 app.use(
   cors({
     origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
