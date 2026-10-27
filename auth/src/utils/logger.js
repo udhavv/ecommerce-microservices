@@ -1,15 +1,22 @@
 import pino from 'pino';
 import env from '../config/env.js';
 
-const logLevel = process.env.LOG_LEVEL || (env.nodeEnv === 'test' ? 'silent' : env.nodeEnv === 'production' ? 'info' : 'debug');
+const isProduction = env.nodeEnv === 'production';
+const logLevel = process.env.LOG_LEVEL || (env.nodeEnv === 'test' ? 'silent' : isProduction ? 'info' : 'debug');
 
-// Only enable pretty printing in local development when not running tests and not in production
-const usePretty = env.nodeEnv === 'development' && process.env.LOG_FORMAT !== 'json';
+// Pretty printing is ONLY for interactive terminal development on local developer machines.
+// In cloud/container environments (Render, Docker, CI) or production, always log raw structured JSON to stdout.
+const isLocalTerminalDev =
+  env.nodeEnv === 'development' &&
+  !process.env.RENDER &&
+  !process.env.DOCKER &&
+  Boolean(process.stdout.isTTY) &&
+  process.env.LOG_FORMAT !== 'json';
 
 // Build transports conditionally
 const targets = [];
 
-if (usePretty) {
+if (isLocalTerminalDev) {
   targets.push({
     target: 'pino-pretty',
     level: logLevel,
@@ -50,8 +57,9 @@ if (targets.length > 0) {
   try {
     transport = targets.length === 1 ? pino.transport(targets[0]) : pino.transport({ targets });
   } catch (err) {
-    // If transport fails to load (e.g. missing optional dev dependency), fallback safely to standard JSON stdout
-    console.error('Failed to initialize pino transport, falling back to stdout:', err.message);
+    // If transport fails to load (e.g. worker thread or target resolution issue), fallback safely to stdout
+    console.error('Failed to initialize pino transport, falling back to standard stdout:', err.message);
+    transport = undefined;
   }
 }
 
@@ -81,3 +89,4 @@ const logger = pino(
 );
 
 export default logger;
+

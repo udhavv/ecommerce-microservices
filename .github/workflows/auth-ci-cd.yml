@@ -164,13 +164,25 @@ jobs:
         env:
           RENDER_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
-          if [ -z "$RENDER_HOOK_URL" ]; then
+          # Clean whitespace, linebreaks, and accidental surrounding quotes
+          CLEAN_HOOK=$(echo "$RENDER_HOOK_URL" | tr -d '\r\n"' | xargs)
+
+          if [ -z "$CLEAN_HOOK" ]; then
             echo "::error::RENDER_DEPLOY_HOOK_URL secret is not set!"
+            echo "Please set RENDER_DEPLOY_HOOK_URL in GitHub Repository Settings -> Secrets and variables -> Actions"
             exit 1
           fi
 
-          echo "Triggering Render deployment..."
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$RENDER_HOOK_URL")
+          if [[ ! "$CLEAN_HOOK" =~ ^https?:// ]]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL is not a valid HTTP URL!"
+            exit 1
+          fi
+
+          # Display masked URL to confirm correct format without leaking secret key
+          MASKED_HOOK=$(echo "$CLEAN_HOOK" | sed -E 's/(key=)[^&]+/\1***/g')
+          echo "Triggering Render deployment at: $MASKED_HOOK"
+
+          RESPONSE=$(curl -s -S -w "\n%{http_code}" -X POST "$CLEAN_HOOK")
           HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | head -n -1)
 
@@ -180,6 +192,7 @@ jobs:
           if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
             echo "Render deployment triggered successfully!"
           else
-            echo "::error::Failed to trigger Render deployment (HTTP $HTTP_STATUS)"
+            echo "::error::Failed to trigger Render deployment (HTTP $HTTP_STATUS)."
+            echo "Please verify in Render Dashboard -> Settings -> Deploy Hook that the URL is exact: https://api.render.com/deploy/srv-xxxx?key=yyyy"
             exit 1
           fi
