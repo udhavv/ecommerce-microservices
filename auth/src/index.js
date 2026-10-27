@@ -23,7 +23,7 @@ const corsOrigins = env.cors.origin
   : ['http://localhost:3000'];
 
 
-  
+
 app.use(
   cors({
     origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
@@ -65,6 +65,7 @@ app.get('/health', async (_req, res) => {
       service: 'auth-microservice',
       database: 'connected',
       timestamp: new Date().toISOString(),
+      message: 'this is the message'
     });
   } catch (error) {
     res.status(503).json({
