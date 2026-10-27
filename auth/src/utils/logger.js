@@ -2,12 +2,13 @@ import pino from 'pino';
 import env from '../config/env.js';
 
 const logLevel = process.env.LOG_LEVEL || (env.nodeEnv === 'test' ? 'silent' : env.nodeEnv === 'production' ? 'info' : 'debug');
-const usePretty = env.nodeEnv !== 'production' && env.nodeEnv !== 'test' && process.env.LOG_FORMAT !== 'json';
+
+// Only enable pretty printing in local development when not running tests and not in production
+const usePretty = env.nodeEnv === 'development' && process.env.LOG_FORMAT !== 'json';
 
 // Build transports conditionally
 const targets = [];
 
-// Local pretty printing for development
 if (usePretty) {
   targets.push({
     target: 'pino-pretty',
@@ -20,7 +21,7 @@ if (usePretty) {
   });
 }
 
-// Direct Grafana Cloud Loki transport (for Render / cloud deployments without local Alloy agent)
+// Direct Grafana Cloud Loki transport (for Render / cloud deployments)
 if (env.loki.url && env.nodeEnv !== 'test') {
   // Normalize loki host (pino-loki expects the base host URL, e.g. https://logs-prod-xxx.grafana.net)
   const lokiHost = env.loki.url.replace(/\/loki\/api\/v1\/push\/?$/, '');
@@ -44,9 +45,15 @@ if (env.loki.url && env.nodeEnv !== 'test') {
   });
 }
 
-const transport = targets.length > 0
-  ? (targets.length === 1 ? pino.transport(targets[0]) : pino.transport({ targets }))
-  : undefined;
+let transport;
+if (targets.length > 0) {
+  try {
+    transport = targets.length === 1 ? pino.transport(targets[0]) : pino.transport({ targets });
+  } catch (err) {
+    // If transport fails to load (e.g. missing optional dev dependency), fallback safely to standard JSON stdout
+    console.error('Failed to initialize pino transport, falling back to stdout:', err.message);
+  }
+}
 
 const logger = pino(
   {
