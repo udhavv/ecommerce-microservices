@@ -1,0 +1,76 @@
+// Grafana Alloy Configuration for Auth Microservice
+
+// Discover containers running on Docker
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// Extract container name as a label
+discovery.relabel "docker_logs" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  // Label logs specifically from auth-service
+  rule {
+    source_labels = ["container"]
+    regex         = "(.*auth.*)"
+    target_label  = "service"
+    replacement   = "auth-service"
+  }
+}
+
+// Scrape stdout/stderr from containers
+loki.source.docker "docker_scraper" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_logs.output
+  forward_to = [loki.process.parse_json.receiver]
+}
+
+// Parse structured Pino logs and extract labels
+loki.process "parse_json" {
+  stage.json {
+    expressions = {
+      level    = "level",
+      service  = "service",
+      env      = "env",
+      method   = "method",
+      url      = "url",
+      status   = "status",
+      duration = "duration",
+      msg      = "msg",
+    }
+  }
+
+  stage.labels {
+    values = {
+      level   = "level",
+      service = "service",
+      env     = "env",
+    }
+  }
+
+  forward_to = [loki.write.local_and_cloud.receiver]
+}
+
+// Forward to both local Loki and Grafana Cloud Loki if configured
+loki.write "local_and_cloud" {
+  // Local Loki endpoint
+  endpoint {
+    url = coalesce(env("LOCAL_LOKI_URL"), "http://loki:3100/loki/api/v1/push")
+  }
+
+  // Grafana Cloud Loki endpoint (conditional via basic_auth if credentials are provided)
+  endpoint {
+    url = env("GRAFANA_CLOUD_LOKI_URL")
+
+    basic_auth {
+      username = env("GRAFANA_CLOUD_LOKI_USER")
+      password = env("GRAFANA_CLOUD_API_TOKEN")
+    }
+  }
+}

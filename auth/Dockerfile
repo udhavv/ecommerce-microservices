@@ -6,7 +6,7 @@
 # ------------------------------------------------------------------------------
 # Stage 1: Dependencies Builder
 # ------------------------------------------------------------------------------
-FROM node:20-alpine AS deps
+FROM node:26-alpine AS deps
 
 # Install build dependencies for native modules (bcrypt)
 RUN apk add --no-cache python3 make g++
@@ -22,7 +22,7 @@ RUN npm ci --omit=dev --ignore-scripts && npm rebuild bcrypt --build-from-source
 # ------------------------------------------------------------------------------
 # Stage 2: Production Runner
 # ------------------------------------------------------------------------------
-FROM node:20-alpine AS runner
+FROM node:26-alpine AS runner
 
 WORKDIR /app
 

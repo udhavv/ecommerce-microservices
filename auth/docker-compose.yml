@@ -12,7 +12,6 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
-      # Automatically initialize database tables on first launch
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
@@ -51,6 +50,11 @@ services:
       GRAFANA_CLOUD_LOKI_URL: ${GRAFANA_CLOUD_LOKI_URL}
       GRAFANA_CLOUD_LOKI_USER: ${GRAFANA_CLOUD_LOKI_USER}
       GRAFANA_CLOUD_API_TOKEN: ${GRAFANA_CLOUD_API_TOKEN}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,9 +69,73 @@ services:
           cpus: '0.25'
           memory: 128M
 
+  # ============================================================================
+  # Grafana Alloy (Collector / Forwarder)
+  # ============================================================================
+  alloy:
+    image: grafana/alloy:v1.0.0
+    container_name: auth-alloy
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - GRAFANA_CLOUD_LOKI_URL=${GRAFANA_CLOUD_LOKI_URL}
+      - GRAFANA_CLOUD_LOKI_USER=${GRAFANA_CLOUD_LOKI_USER}
+      - GRAFANA_CLOUD_API_TOKEN=${GRAFANA_CLOUD_API_TOKEN}
+      - LOCAL_LOKI_URL=http://loki:3100/loki/api/v1/push
+    command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
+    ports:
+      - "12345:12345"
+    restart: unless-stopped
+    depends_on:
+      - loki
+    networks:
+      - auth_internal_network
+
+  # ============================================================================
+  # Grafana Loki (Log Storage Engine)
+  # ============================================================================
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: auth-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./observability/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/tmp/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+    networks:
+      - auth_internal_network
+
+  # ============================================================================
+  # Grafana (Log Visualization & Dashboard UI)
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: auth-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    depends_on:
+      - loki
+    networks:
+      - auth_internal_network
+
 volumes:
   postgres_prod_data:
     name: auth_postgres_prod_data
+  loki_data:
+    name: auth_loki_data
+  grafana_data:
+    name: auth_grafana_data
 
 networks:
   auth_internal_network:
