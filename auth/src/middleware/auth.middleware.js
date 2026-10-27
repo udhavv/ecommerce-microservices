@@ -44,6 +44,7 @@ export async function authenticate(req, res, next) {
     const userId = decoded.sub ?? decoded.id;
 
     if (!userId) {
+      logger.warn({ path: req.path }, 'Token decoded but missing user id or sub claim');
       return res.status(401).json({
         error: 'Invalid access token',
       });
@@ -56,6 +57,8 @@ export async function authenticate(req, res, next) {
 
     return next();
   } catch (error) {
+    logger.debug({ err: error.message, name: error.name, path: req.path }, 'Token verification failed');
+
     if (error.name === 'TokenExpiredError') {
       // Automatic recovery: Check if a refresh token is present in cookies or headers
       const refreshToken = req.cookies?.refreshToken || req.headers['x-refresh-token'];

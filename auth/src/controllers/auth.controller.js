@@ -14,6 +14,7 @@ import logger from '../utils/logger.js';
 import { getExpiryMs } from '../utils/token.js';
 
 const isProduction = env.nodeEnv === 'production';
+console.log('this iis the isproduction: ', isProduction)
 
 const cookieBase = {
   httpOnly: true,

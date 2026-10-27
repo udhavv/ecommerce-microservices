@@ -18,7 +18,7 @@ const env = {
     refreshExpiry: cleanStr(process.env.JWT_REFRESH_EXPIRY) || '7d',
   },
   cors: {
-    origin: (isProduction ? cleanStr(process.env.PRODUCTION_FRONTEND_URL) : cleanStr(process.env.FRONTEND_URL_DEVELOPMENT)) || 'http://localhost:3000',
+    origin: cleanStr(process.env.CORS_ORIGIN) || (isProduction ? cleanStr(process.env.PRODUCTION_FRONTEND_URL) : cleanStr(process.env.FRONTEND_URL_DEVELOPMENT)) || 'http://localhost:3000',
   },
   version: {
     ver: cleanStr(process.env.VERSION) || '1.0.0',
@@ -39,7 +39,7 @@ const env = {
   loki: {
     url: cleanStr(process.env.GRAFANA_CLOUD_LOKI_URL),
     user: cleanStr(process.env.GRAFANA_CLOUD_LOKI_USER),
-    token: cleanStr(process.env.GRAFANA_CLOUD_API_TOKEN),
+    token: cleanStr(process.env.GRAFANA_CLOUD_API_TOKEN) || cleanStr(process.env.GRAFANA_CLOUD_API_KEY),
   },
 };
 
