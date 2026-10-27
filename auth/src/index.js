@@ -65,7 +65,7 @@ app.get('/health', async (_req, res) => {
       service: 'auth-microservice',
       database: 'connected',
       timestamp: new Date().toISOString(),
-      message: 'this is the message'
+      message: 'this is the message, this is not viewing'
     });
   } catch (error) {
     res.status(503).json({
