@@ -40,6 +40,7 @@ if (env.loki.url && env.nodeEnv !== 'test') {
       batching: true,
       interval: 5,
       host: lokiHost,
+      replaceTimestamp: true,
       basicAuth: env.loki.user && env.loki.token ? {
         username: env.loki.user,
         password: env.loki.token,
@@ -70,7 +71,7 @@ const logger = pino(
       service: 'auth-service',
       env: env.nodeEnv,
     },
-    timestamp: pino.stdTimeFunctions.isoTime,
+    timestamp: pino.stdTimeFunctions.epochTime,
     redact: {
       paths: [
         'req.headers.authorization',
