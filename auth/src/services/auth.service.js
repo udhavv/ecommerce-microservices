@@ -133,6 +133,7 @@ export async function registerUser({
     user.roles = await getUserRoles(client, user.id);
 
     await client.query('COMMIT');
+    logger.info({ userId: user.id }, 'User record and role inserted into database');
 
     await audit(user.id, event('USER_REGISTERED'), {
       email: normalizedEmail,
@@ -231,6 +232,7 @@ export async function verifyUserEmail(rawToken) {
     user.roles = await getUserRoles(client, user.id);
 
     await client.query('COMMIT');
+    logger.info({ userId: user.id }, 'User account status set to active');
 
     await audit(user.id, event('EMAIL_VERIFIED'), { email: user.email });
 
@@ -296,6 +298,7 @@ export async function forgotPassword(email) {
     );
 
     await client.query('COMMIT');
+    logger.info({ userId: user.id }, 'Password reset token generated and stored');
 
     await audit(user.id, event('PASSWORD_RESET_REQUESTED'), {
       email: normalizedEmail,
@@ -403,6 +406,7 @@ export async function resetPassword({ token: rawToken, newPassword }) {
     );
 
     await client.query('COMMIT');
+    logger.info({ userId: record.user_id }, 'Password reset transaction committed');
 
     await audit(record.user_id, event('PASSWORD_RESET_COMPLETED'), {
       email: record.email,
@@ -482,6 +486,7 @@ export async function loginUser({ email, password }) {
      VALUES ($1, $2, $3)`,
     [user.id, hashToken(refreshToken), refreshTokenExpiry],
   );
+  logger.info({ userId: user.id }, 'User session created successfully');
 
   await audit(user.id, event('LOGIN_SUCCESS'));
 
@@ -563,6 +568,7 @@ export async function refreshUserSession(refreshToken) {
     );
 
     await client.query('COMMIT');
+    logger.info({ userId: user.user_id }, 'Session rotated with new refresh token');
 
     await audit(user.user_id, event('TOKEN_REFRESHED'));
 
@@ -599,6 +605,7 @@ export async function logoutUser(refreshToken) {
   );
 
   if (result.rows[0]) {
+    logger.info({ userId: result.rows[0].user_id }, 'Session revoked from database');
     await audit(result.rows[0].user_id, event('LOGOUT_SUCCESS'));
   }
 }

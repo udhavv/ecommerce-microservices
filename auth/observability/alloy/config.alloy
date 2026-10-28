@@ -54,23 +54,23 @@ loki.process "parse_json" {
     }
   }
 
-  forward_to = [loki.write.local_and_cloud.receiver]
+  forward_to = [loki.write.grafana_cloud.receiver]
 }
 
-// Forward to both local Loki and Grafana Cloud Loki if configured
-loki.write "local_and_cloud" {
-  // Local Loki endpoint
+// Forward to Grafana Cloud Loki
+loki.write "grafana_cloud" {
+  // Local Loki endpoint fallback if defined
   endpoint {
-    url = coalesce(env("LOCAL_LOKI_URL"), "http://loki:3100/loki/api/v1/push")
+    url = coalesce(sys.env("LOCAL_LOKI_URL"), "http://loki:3100/loki/api/v1/push")
   }
 
-  // Grafana Cloud Loki endpoint (conditional via basic_auth if credentials are provided)
+  // Grafana Cloud Loki endpoint
   endpoint {
-    url = env("GRAFANA_CLOUD_LOKI_URL")
+    url = sys.env("GRAFANA_CLOUD_LOKI_URL")
 
     basic_auth {
-      username = env("GRAFANA_CLOUD_LOKI_USER")
-      password = env("GRAFANA_CLOUD_API_TOKEN")
+      username = sys.env("GRAFANA_CLOUD_LOKI_USER")
+      password = sys.env("GRAFANA_CLOUD_API_TOKEN")
     }
   }
 }

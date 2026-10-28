@@ -3,6 +3,7 @@ import { pool } from '../config/db.js';
 import env from '../config/env.js';
 import logger from '../utils/logger.js';
 import { refreshUserSession } from '../services/auth.service.js';
+import { logAuditEvent, AuditEvents } from '../services/audit.service.js';
 
 /**
  * Extract token flexibly from Authorization header or cookies
@@ -34,6 +35,13 @@ export async function authenticate(req, res, next) {
   const token = extractToken(req);
 
   if (!token) {
+    void logAuditEvent({
+      userId: null,
+      eventType: AuditEvents.UNAUTHORIZED_ACCESS,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      metadata: { path: req.path, method: req.method, reason: 'missing_token' },
+    });
     return res.status(401).json({
       error: 'Access token is required',
     });
@@ -44,6 +52,13 @@ export async function authenticate(req, res, next) {
     const userId = decoded.sub ?? decoded.id;
 
     if (!userId) {
+      void logAuditEvent({
+        userId: null,
+        eventType: AuditEvents.TOKEN_INVALID,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        metadata: { path: req.path, method: req.method, reason: 'missing_user_claim' },
+      });
       logger.warn({ path: req.path }, 'Token decoded but missing user id or sub claim');
       return res.status(401).json({
         error: 'Invalid access token',
@@ -60,6 +75,14 @@ export async function authenticate(req, res, next) {
     logger.debug({ err: error.message, name: error.name, path: req.path }, 'Token verification failed');
 
     if (error.name === 'TokenExpiredError') {
+      void logAuditEvent({
+        userId: null,
+        eventType: AuditEvents.TOKEN_EXPIRED,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        metadata: { path: req.path, method: req.method, reason: 'token_expired' },
+      });
+
       // Automatic recovery: Check if a refresh token is present in cookies or headers
       const refreshToken = req.cookies?.refreshToken || req.headers['x-refresh-token'];
 
@@ -105,6 +128,14 @@ export async function authenticate(req, res, next) {
       });
     }
 
+    void logAuditEvent({
+      userId: null,
+      eventType: AuditEvents.TOKEN_INVALID,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      metadata: { path: req.path, method: req.method, reason: error.message },
+    });
+
     return res.status(401).json({
       error: 'Invalid access token',
     });
@@ -114,6 +145,13 @@ export async function authenticate(req, res, next) {
 export function authorize(...roles) {
   return async (req, res, next) => {
     if (!req.user?.id) {
+      void logAuditEvent({
+        userId: null,
+        eventType: AuditEvents.UNAUTHORIZED_ACCESS,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        metadata: { path: req.path, method: req.method, reason: 'unauthenticated' },
+      });
       return res.status(401).json({
         error: 'Authentication required',
       });
@@ -141,6 +179,13 @@ export function authorize(...roles) {
       );
 
       if (!hasRequiredRole) {
+        void logAuditEvent({
+          userId: req.user.id,
+          eventType: AuditEvents.FORBIDDEN_ACCESS,
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+          metadata: { path: req.path, method: req.method, requiredRoles: roles, userRoles },
+        });
         return res.status(403).json({
           error: 'Insufficient permissions',
         });

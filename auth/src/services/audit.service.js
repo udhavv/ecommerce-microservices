@@ -52,8 +52,13 @@ export const AuditEvents = {
   LOGIN_BLOCKED: 'user.login.blocked',
   TOKEN_REFRESHED: 'user.token.refreshed',
   LOGOUT: 'user.logout',
+  LOGOUT_SUCCESS: 'user.logout',
   PASSWORD_CHANGED: 'user.password.changed',
   EMAIL_VERIFIED: 'user.email.verified',
   PASSWORD_RESET_REQUESTED: 'user.password.reset.requested',
   PASSWORD_RESET_COMPLETED: 'user.password.reset.completed',
+  TOKEN_INVALID: 'auth.token.invalid',
+  TOKEN_EXPIRED: 'auth.token.expired',
+  UNAUTHORIZED_ACCESS: 'auth.unauthorized_access',
+  FORBIDDEN_ACCESS: 'auth.forbidden_access',
 };

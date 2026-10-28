@@ -15,6 +15,16 @@ import { getExpiryMs } from '../utils/token.js';
 
 const isProduction = env.nodeEnv === 'production';
 
+const maskEmail = (email) => {
+  if (typeof email !== 'string') return 'unknown';
+  const parts = email.split('@');
+  if (parts.length !== 2) return '***';
+  const name = parts[0];
+  const domain = parts[1];
+  const maskedName = name.length > 2 ? `${name.slice(0, 2)}***` : `${name}***`;
+  return `${maskedName}@${domain}`;
+};
+
 const cookieBase = {
   httpOnly: true,
   secure: isProduction,
@@ -41,6 +51,10 @@ const clearAuthCookies = (res) => {
 
 const handleError = (error, req, res, next) => {
   if (error instanceof AuthError) {
+    logger.warn(
+      { statusCode: error.statusCode, reason: error.message, path: req.path, method: req.method },
+      'Authentication request rejected',
+    );
     return res.status(error.statusCode).json({
       success: false,
       message: error.message,
@@ -48,8 +62,8 @@ const handleError = (error, req, res, next) => {
   }
 
   logger.error(
-    { err: error, path: req.path, method: req.method },
-    'Authentication request failed',
+    { err: error.message, stack: error.stack, path: req.path, method: req.method },
+    'Authentication server error',
   );
 
   return next(error);
@@ -57,7 +71,9 @@ const handleError = (error, req, res, next) => {
 
 export const register = async (req, res, next) => {
   try {
+    logger.info({ email: maskEmail(req.body?.email) }, 'Processing user registration');
     const user = await registerUser(req.body);
+    logger.info({ userId: user.id }, 'User registered successfully, verification email dispatched');
 
     return res.status(201).json({
       success: true,
@@ -71,6 +87,7 @@ export const register = async (req, res, next) => {
 
 export const verifyEmail = async (req, res, next) => {
   try {
+    logger.info({ method: req.method }, 'Processing email verification');
     const token = req.body?.token || req.query?.token;
 
     if (!token) {
@@ -94,6 +111,7 @@ export const verifyEmail = async (req, res, next) => {
     }
 
     const user = await verifyUserEmail(token);
+    logger.info({ userId: user.id }, 'Email verification successful');
 
     // If accessed via a browser directly by clicking the link in the verification email
     if (req.method === 'GET' && req.accepts('html')) {
@@ -150,7 +168,9 @@ export const verifyEmail = async (req, res, next) => {
 
 export const forgotPassword = async (req, res, next) => {
   try {
+    logger.info({ email: maskEmail(req.body?.email) }, 'Processing forgot password request');
     const result = await requestForgotPassword(req.body.email);
+    logger.info({ email: maskEmail(req.body?.email) }, 'Forgot password request processed');
     return res.status(200).json({
       success: true,
       message: result.message,
@@ -162,7 +182,9 @@ export const forgotPassword = async (req, res, next) => {
 
 export const resetPassword = async (req, res, next) => {
   try {
+    logger.info('Processing password reset request');
     const result = await handleResetPassword(req.body);
+    logger.info('Password reset completed successfully');
     return res.status(200).json({
       success: true,
       message: result.message,
@@ -174,9 +196,11 @@ export const resetPassword = async (req, res, next) => {
 
 export const login = async (req, res, next) => {
   try {
+    logger.info({ email: maskEmail(req.body?.email) }, 'Processing user login attempt');
     const { user, accessToken, refreshToken } = await loginUser(req.body);
 
     setAuthCookies(res, accessToken, refreshToken);
+    logger.info({ userId: user.id }, 'User login successful');
 
     return res.status(200).json({
       success: true,
@@ -190,10 +214,12 @@ export const login = async (req, res, next) => {
 
 export const refresh = async (req, res, next) => {
   try {
+    logger.info('Processing session token refresh request');
     const token = req.cookies?.refreshToken || req.body?.refreshToken;
     const { user, accessToken, refreshToken } = await refreshUserSession(token);
 
     setAuthCookies(res, accessToken, refreshToken);
+    logger.info({ userId: user.id }, 'Session token refresh successful');
 
     return res.status(200).json({
       success: true,
@@ -211,9 +237,11 @@ export const refresh = async (req, res, next) => {
 
 export const logout = async (req, res, next) => {
   try {
+    logger.info('Processing user logout request');
     const token = req.cookies?.refreshToken || req.body?.refreshToken;
     await logoutUser(token);
     clearAuthCookies(res);
+    logger.info('User logout successful');
 
     return res.status(200).json({
       success: true,
@@ -226,6 +254,7 @@ export const logout = async (req, res, next) => {
 
 export const profile = async (req, res, next) => {
   try {
+    logger.info({ userId: req.user?.id }, 'Retrieving user profile');
     const user = await getCurrentUser(req.user.id);
 
     return res.status(200).json({

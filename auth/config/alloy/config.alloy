@@ -1,15 +1,30 @@
-// Grafana Alloy Configuration for ingesting Auth Microservice logs and pushing to Grafana Cloud Loki
+// Grafana Alloy Configuration for ingesting Auth Microservice container logs and pushing to Grafana Cloud Loki
+// No local volume file storage; scrapes container stdout directly
 
-// Target log files or container logs
-local.file_match "auth_logs" {
-  path_targets = [
-    { "__path__" = "./logs/*.log", "service" = "auth-service" },
-  ]
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
 }
 
-// Scrape local log files
-loki.source.file "auth_files" {
-  targets    = local.file_match.auth_logs.targets
+discovery.relabel "docker_logs" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["container"]
+    regex         = "(.*auth.*)"
+    target_label  = "service"
+    replacement   = "auth-service"
+  }
+}
+
+loki.source.docker "docker_scraper" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_logs.output
   forward_to = [loki.process.auth_logs.receiver]
 }
 
