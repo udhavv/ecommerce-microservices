@@ -4,6 +4,7 @@ import env from '../config/env.js';
 import logger from '../utils/logger.js';
 import { refreshUserSession } from '../services/auth.service.js';
 import { logAuditEvent, AuditEvents } from '../services/audit.service.js';
+import { success } from 'zod';
 
 /**
  * Extract token flexibly from Authorization header or cookies
@@ -31,6 +32,126 @@ export function extractToken(req) {
   return null;
 }
 
+// export async function authenticate(req, res, next) {
+//   const token = extractToken(req);
+
+//   if (!token) {
+//     void logAuditEvent({
+//       userId: null,
+//       eventType: AuditEvents.UNAUTHORIZED_ACCESS,
+//       ipAddress: req.ip,
+//       userAgent: req.headers['user-agent'],
+//       metadata: { path: req.path, method: req.method, reason: 'missing_token' },
+//     });
+//     return res.status(401).json({
+//       success: false,
+//       error: 'Access token is required',
+//     });
+//   }
+
+//   try {
+//     const decoded = verifyAccessToken(token);
+//     const userId = decoded.sub ?? decoded.id;
+
+//     if (!userId) {
+//       void logAuditEvent({
+//         userId: null,
+//         eventType: AuditEvents.TOKEN_INVALID,
+//         ipAddress: req.ip,
+//         userAgent: req.headers['user-agent'],
+//         metadata: { path: req.path, method: req.method, reason: 'missing_user_claim' },
+//       });
+//       logger.warn({ path: req.path }, 'Token decoded but missing user id or sub claim');
+//       return res.status(401).json({
+//         error: 'Invalid access token1',
+//       });
+//     }
+
+//     req.user = {
+//       ...decoded,
+//       id: userId,
+//     };
+
+//     return next();
+//   } catch (error) {
+//     logger.debug({ err: error.message, name: error.name, path: req.path }, 'Token verification failed');
+
+//     if (error.name === 'TokenExpiredError') {
+//       void logAuditEvent({
+//         userId: null,
+//         eventType: AuditEvents.TOKEN_EXPIRED,
+//         ipAddress: req.ip,
+//         userAgent: req.headers['user-agent'],
+//         metadata: { path: req.path, method: req.method, reason: 'token_expired' },
+//       });
+
+//       // Automatic recovery: Check if a refresh token is present in cookies or headers
+//       const refreshToken = req.cookies?.refreshToken || req.headers['x-refresh-token'];
+
+//       if (refreshToken) {
+//         try {
+//           const { user, accessToken: newAccessToken, refreshToken: newRefreshToken } =
+//             await refreshUserSession(refreshToken);
+
+//           const isProduction = env.nodeEnv === 'production';
+//           const cookieBase = {
+//             httpOnly: true,
+//             secure: isProduction,
+//             sameSite: isProduction ? 'none' : 'lax',
+//             path: '/',
+//           };
+
+//           res.cookie('accessToken', newAccessToken, {
+//             ...cookieBase,
+//             maxAge: getExpiryMs(env.jwt.accessExpiry, 15 * 60 * 1000),
+//           });
+
+//           res.cookie('refreshToken', newRefreshToken, {
+//             ...cookieBase,
+//             maxAge: getExpiryMs(env.jwt.refreshExpiry, 7 * 24 * 60 * 60 * 1000),
+//           });
+
+//           res.setHeader('x-access-token', newAccessToken);
+
+//           req.user = {
+//             ...user,
+//             id: user.id,
+//           };
+
+//           return next();
+//         } catch (refreshErr) {
+//           logger.debug({ err: refreshErr }, 'Automatic token refresh on expired access token failed');
+//         }
+//       }
+
+//       return res.status(401).json({
+//         error: 'Access token has expired',
+//         code: 'TOKEN_EXPIRED',
+//       });
+//     }
+
+//     void logAuditEvent({
+//       userId: null,
+//       eventType: AuditEvents.TOKEN_INVALID,
+//       ipAddress: req.ip,
+//       userAgent: req.headers['user-agent'],
+//       metadata: { path: req.path, method: req.method, reason: error.message },
+//     });
+
+//     return res.status(401).json({
+//       error: 'Invalid access token2',
+//     });
+//   }
+// }
+
+
+
+
+
+
+
+
+
 export async function authenticate(req, res, next) {
   const token = extractToken(req);
 
@@ -40,10 +161,17 @@ export async function authenticate(req, res, next) {
       eventType: AuditEvents.UNAUTHORIZED_ACCESS,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
-      metadata: { path: req.path, method: req.method, reason: 'missing_token' },
+      metadata: {
+        path: req.path,
+        method: req.method,
+        reason: 'missing_token',
+      },
     });
+
     return res.status(401).json({
+      success: false,
       error: 'Access token is required',
+      code: 'TOKEN_MISSING',
     });
   }
 
@@ -51,17 +179,20 @@ export async function authenticate(req, res, next) {
     const decoded = verifyAccessToken(token);
     const userId = decoded.sub ?? decoded.id;
 
-    if (!userId) {
-      void logAuditEvent({
-        userId: null,
-        eventType: AuditEvents.TOKEN_INVALID,
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
-        metadata: { path: req.path, method: req.method, reason: 'missing_user_claim' },
-      });
-      logger.warn({ path: req.path }, 'Token decoded but missing user id or sub claim');
+    if (
+      userId === undefined ||
+      userId === null ||
+      String(userId).length === 0
+    ) {
+      logger.warn(
+        { path: req.path },
+        'Verified token has no user identifier',
+      );
+
       return res.status(401).json({
+        success: false,
         error: 'Invalid access token',
+        code: 'TOKEN_INVALID',
       });
     }
 
@@ -72,75 +203,55 @@ export async function authenticate(req, res, next) {
 
     return next();
   } catch (error) {
-    logger.debug({ err: error.message, name: error.name, path: req.path }, 'Token verification failed');
+    const expired = error.name === 'TokenExpiredError';
 
-    if (error.name === 'TokenExpiredError') {
-      void logAuditEvent({
-        userId: null,
-        eventType: AuditEvents.TOKEN_EXPIRED,
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
-        metadata: { path: req.path, method: req.method, reason: 'token_expired' },
-      });
-
-      // Automatic recovery: Check if a refresh token is present in cookies or headers
-      const refreshToken = req.cookies?.refreshToken || req.headers['x-refresh-token'];
-
-      if (refreshToken) {
-        try {
-          const { user, accessToken: newAccessToken, refreshToken: newRefreshToken } =
-            await refreshUserSession(refreshToken);
-
-          const isProduction = env.nodeEnv === 'production';
-          const cookieBase = {
-            httpOnly: true,
-            secure: isProduction,
-            sameSite: isProduction ? 'none' : 'lax',
-            path: '/',
-          };
-
-          res.cookie('accessToken', newAccessToken, {
-            ...cookieBase,
-            maxAge: getExpiryMs(env.jwt.accessExpiry, 15 * 60 * 1000),
-          });
-
-          res.cookie('refreshToken', newRefreshToken, {
-            ...cookieBase,
-            maxAge: getExpiryMs(env.jwt.refreshExpiry, 7 * 24 * 60 * 60 * 1000),
-          });
-
-          res.setHeader('x-access-token', newAccessToken);
-
-          req.user = {
-            ...user,
-            id: user.id,
-          };
-
-          return next();
-        } catch (refreshErr) {
-          logger.debug({ err: refreshErr }, 'Automatic token refresh on expired access token failed');
-        }
-      }
-
-      return res.status(401).json({
-        error: 'Access token has expired',
-        code: 'TOKEN_EXPIRED',
-      });
-    }
+    logger.debug(
+      {
+        name: error.name,
+        path: req.path,
+        reason: expired ? 'token_expired' : 'token_invalid',
+      },
+      'Access token verification failed',
+    );
 
     void logAuditEvent({
       userId: null,
-      eventType: AuditEvents.TOKEN_INVALID,
+      eventType: expired
+        ? AuditEvents.TOKEN_EXPIRED
+        : AuditEvents.TOKEN_INVALID,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
-      metadata: { path: req.path, method: req.method, reason: error.message },
+      metadata: {
+        path: req.path,
+        method: req.method,
+        reason: expired ? 'token_expired' : 'token_invalid',
+      },
     });
 
     return res.status(401).json({
-      error: 'Invalid access token',
+      success: false,
+      error: expired
+        ? 'Access token has expired'
+        : 'Invalid access token',
+      code: expired ? 'TOKEN_EXPIRED' : 'TOKEN_INVALID',
     });
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 export function authorize(...roles) {
   return async (req, res, next) => {

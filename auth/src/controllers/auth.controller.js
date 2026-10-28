@@ -25,6 +25,8 @@ const maskEmail = (email) => {
   return `${maskedName}@${domain}`;
 };
 
+
+
 const cookieBase = {
   httpOnly: true,
   secure: isProduction,
@@ -35,12 +37,18 @@ const cookieBase = {
 const setAuthCookies = (res, accessToken, refreshToken) => {
   res.cookie('accessToken', accessToken, {
     ...cookieBase,
-    maxAge: getExpiryMs(env.jwt.accessExpiry, 15 * 60 * 1000),
+    maxAge: getExpiryMs(
+      env.jwt.accessExpiry,
+      15 * 60 * 1000,
+    ),
   });
 
   res.cookie('refreshToken', refreshToken, {
     ...cookieBase,
-    maxAge: getExpiryMs(env.jwt.refreshExpiry, 7 * 24 * 60 * 60 * 1000),
+    maxAge: getExpiryMs(
+      env.jwt.refreshExpiry,
+      7 * 24 * 60 * 60 * 1000,
+    ),
   });
 };
 
@@ -48,6 +56,7 @@ const clearAuthCookies = (res) => {
   res.clearCookie('accessToken', cookieBase);
   res.clearCookie('refreshToken', cookieBase);
 };
+
 
 const handleError = (error, req, res, next) => {
   if (error instanceof AuthError) {
@@ -205,7 +214,7 @@ export const login = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: 'Login successful',
-      data: { user, accessToken, refreshToken },
+      data: { user },
     });
   } catch (error) {
     return handleError(error, req, res, next);
@@ -224,7 +233,7 @@ export const refresh = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: 'Session refreshed',
-      data: { user, accessToken, refreshToken },
+      data: { user },
     });
   } catch (error) {
     if (error instanceof AuthError && error.statusCode === 401) {
