@@ -13,9 +13,10 @@ function getMonotonicNano(logTime) {
 }
 
 /**
- * Creates a stream that batches and pushes non-security logs to Grafana Cloud Loki.
- * Sensitive / security audit events are filtered out so they are never sent outside.
- * Zero logs are stored in local volumes.
+ * Creates a stream that batches and pushes logs directly to Grafana Cloud Loki over HTTP.
+ * Formats every payload strictly adhering to Loki's loghttp v1 schema:
+ * - Labels inside `stream` are guaranteed to be string key-value pairs.
+ * - `values` tuples are strictly [nanosecond_string, stringified_log_line].
  */
 export function createLokiStream() {
   if (!env.loki.url || env.nodeEnv === 'test') {
@@ -30,7 +31,6 @@ export function createLokiStream() {
       : undefined;
 
   let buffer = [];
-  let flushTimer = null;
   let isSending = false;
 
   async function flush() {
@@ -40,23 +40,23 @@ export function createLokiStream() {
     isSending = true;
 
     try {
-      // Group non-security logs by unique label set
       const streamsMap = new Map();
 
       for (const item of batch) {
-        // Exclude any security audit events or sensitive logs from Loki
+        // Exclude audit or security events from external shipping if desired
         if (item.isSecurity || item.isAudit || item.eventType) {
           continue;
         }
 
         const levelStr = String(item.level || 'info').toLowerCase();
-        const key = `${env.nodeEnv}:${levelStr}`;
+        const envStr = String(env.nodeEnv || 'production');
+        const key = `${envStr}:${levelStr}`;
 
         if (!streamsMap.has(key)) {
           streamsMap.set(key, {
             stream: {
               service: 'auth-service',
-              env: String(env.nodeEnv),
+              env: envStr,
               level: levelStr,
             },
             values: [],
@@ -67,6 +67,7 @@ export function createLokiStream() {
         const nano = getMonotonicNano(item.time);
 
         const { isSecurity, isAudit, ...safeLog } = item;
+        // The log line must be a JSON string
         streamEntry.values.push([nano, JSON.stringify(safeLog)]);
       }
 
@@ -87,7 +88,7 @@ export function createLokiStream() {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.warn(`[Loki] Push returned status ${response.status}: ${errorText.slice(0, 150)}`);
+        console.warn(`[Loki] Push returned status ${response.status}: ${errorText.slice(0, 200)}`);
       }
     } catch (err) {
       console.warn(`[Loki] Push network error: ${err.message}`);
@@ -103,7 +104,6 @@ export function createLokiStream() {
     write(chunk, _encoding, callback) {
       try {
         const logObj = JSON.parse(chunk.toString());
-        // Do not store in local; filter out security logs before shipping to Loki
         if (!logObj.isSecurity && !logObj.isAudit && !logObj.eventType) {
           buffer.push(logObj);
           if (buffer.length >= 20) {
@@ -117,7 +117,7 @@ export function createLokiStream() {
     },
   });
 
-  flushTimer = setInterval(() => {
+  const flushTimer = setInterval(() => {
     void flush();
   }, 3000);
 
