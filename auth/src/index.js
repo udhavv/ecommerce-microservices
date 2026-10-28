@@ -61,7 +61,7 @@ app.use((req, res, next) => {
 app.get('/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
-    logger.info({ service: 'auth-microservice', database: 'connected' }, 'Health check passed');
+    // logger.info({ service: 'auth-microservice', database: 'connected' }, 'Health check passed');
     res.status(200).json({
       status: 'ok',
       service: 'auth-microservice',
@@ -69,7 +69,7 @@ app.get('/health', async (_req, res) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    logger.error({ service: 'auth-microservice', database: 'disconnected', err: error.message }, 'Health check failed');
+    // logger.error({ service: 'auth-microservice', database: 'disconnected', err: error.message }, 'Health check failed');
     res.status(503).json({
       status: 'degraded',
       service: 'auth-microservice',
