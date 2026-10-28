@@ -31,18 +31,17 @@ loki.source.docker "docker_scraper" {
   forward_to = [loki.process.parse_json.receiver]
 }
 
-// Parse structured Pino logs and extract labels
+// Parse structured Pino logs and extract ONLY the string fields used as labels.
+// Extracting numeric fields (status, duration) or free-text fields (msg, url)
+// causes Alloy to produce malformed JSON in the Loki push request body,
+// because numeric values get embedded without proper quoting.
 loki.process "parse_json" {
+  // Only extract fields that are used as labels — all must be strings.
   stage.json {
     expressions = {
-      level    = "level",
-      service  = "service",
-      env      = "env",
-      method   = "method",
-      url      = "url",
-      status   = "status",
-      duration = "duration",
-      msg      = "msg",
+      level   = "level",
+      service = "service",
+      env     = "env",
     }
   }
 
@@ -54,23 +53,19 @@ loki.process "parse_json" {
     }
   }
 
-  forward_to = [loki.write.grafana_cloud.receiver]
-}
-
-// Forward to Grafana Cloud Loki
-loki.write "grafana_cloud" {
-  // Local Loki endpoint fallback if defined
-  endpoint {
-    url = coalesce(sys.env("LOCAL_LOKI_URL"), "http://loki:3100/loki/api/v1/push")
+  // Ensure a service label is always present even if the log line doesn't include one
+  stage.static_labels {
+    values = {
+      job = "auth-service",
+    }
   }
 
-  // Grafana Cloud Loki endpoint
-  endpoint {
-    url = sys.env("GRAFANA_CLOUD_LOKI_URL")
+  forward_to = [loki.write.local_loki.receiver]
+}
 
-    basic_auth {
-      username = sys.env("GRAFANA_CLOUD_LOKI_USER")
-      password = sys.env("GRAFANA_CLOUD_API_TOKEN")
-    }
+// Forward logs to the local Loki instance (running alongside in Docker Compose)
+loki.write "local_loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
   }
 }
