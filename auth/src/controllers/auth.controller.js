@@ -214,10 +214,7 @@ export const login = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: 'Login successful',
-      data: {
-        user,
-
-      },
+      data: { user },
     });
   } catch (error) {
     return handleError(error, req, res, next);
@@ -236,10 +233,7 @@ export const refresh = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: 'Session refreshed',
-      data: {
-        user,
-        
-      },
+      data: { user },
     });
   } catch (error) {
     if (error instanceof AuthError && error.statusCode === 401) {

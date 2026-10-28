@@ -157,8 +157,12 @@ describe('Auth Microservice - End-to-End Integration Tests', () => {
         password: testUser.password,
       });
 
-      accessToken = loginRes.body.data.accessToken;
-      refreshToken = loginRes.body.data.refreshToken;
+      const cookies = loginRes.headers['set-cookie'] || [];
+      const accessCookie = cookies.find((c) => c.startsWith('accessToken='));
+      const refreshCookie = cookies.find((c) => c.startsWith('refreshToken='));
+
+      accessToken = accessCookie ? accessCookie.split(';')[0].replace('accessToken=', '') : null;
+      refreshToken = refreshCookie ? refreshCookie.split(';')[0].replace('refreshToken=', '') : null;
     });
 
     it('GET /api/auth/profile should successfully retrieve user profile with access token', async () => {
@@ -225,18 +229,22 @@ describe('Auth Microservice - End-to-End Integration Tests', () => {
     it('POST /api/auth/refresh should issue new tokens', async () => {
       const res = await request(app)
         .post('/api/auth/refresh')
+        .set('Cookie', [`refreshToken=${refreshToken}`])
         .send({ refreshToken });
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.data.accessToken).toBeDefined();
-      expect(res.body.data.refreshToken).toBeDefined();
+      expect(res.headers['set-cookie']).toBeDefined();
+      const cookies = res.headers['set-cookie'];
+      expect(cookies.some((c) => c.startsWith('accessToken='))).toBe(true);
+      expect(cookies.some((c) => c.startsWith('refreshToken='))).toBe(true);
     });
 
     it('POST /api/auth/logout should revoke session and log out', async () => {
       const res = await request(app)
         .post('/api/auth/logout')
         .set('Authorization', `Bearer ${accessToken}`)
+        .set('Cookie', [`refreshToken=${refreshToken}`])
         .send({ refreshToken });
 
       expect(res.status).toBe(200);
@@ -303,7 +311,9 @@ describe('Auth Microservice - End-to-End Integration Tests', () => {
         password: newPassword,
       });
       expect(newLoginRes.status).toBe(200);
-      expect(newLoginRes.body.data.accessToken).toBeDefined();
+      expect(newLoginRes.headers['set-cookie']).toBeDefined();
+      const newCookies = newLoginRes.headers['set-cookie'];
+      expect(newCookies.some((c) => c.startsWith('accessToken='))).toBe(true);
     });
   });
 });
