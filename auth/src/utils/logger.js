@@ -78,52 +78,42 @@
 
 
 
-
 import pino from 'pino';
 import env from '../config/env.js';
-import { createLokiStream } from './lokiPusher.js';
 
 const isProduction = env.nodeEnv === 'production';
-const logLevel = process.env.LOG_LEVEL || (env.nodeEnv === 'test' ? 'silent' : isProduction ? 'info' : 'debug');
 
-// Destination streams list (zero local disk volume storage)
-const streams = [{ stream: process.stdout }];
+const logLevel =
+  process.env.LOG_LEVEL ||
+  (env.nodeEnv === 'test' ? 'silent' : isProduction ? 'info' : 'debug');
 
-// Direct Loki pusher: only active if Grafana Cloud Loki URL is configured in environment
-if (env.loki.url && env.nodeEnv !== 'test') {
-  const lokiStream = createLokiStream();
-  if (lokiStream) {
-    streams.push({ stream: lokiStream });
-  }
-}
+const logger = pino({
+  level: logLevel,
 
-const logger = pino(
-  {
-    level: logLevel,
-    base: {
-      service: 'auth-service',
-      env: env.nodeEnv,
-    },
-    // Formats level as a string ('info', 'warn', 'error') so Loki's Go parser never encounters unquoted numbers
-    formatters: {
-      level: (label) => ({ level: label }),
-    },
-    timestamp: pino.stdTimeFunctions.epochTime,
-    redact: {
-      paths: [
-        'req.headers.authorization',
-        'req.body.password',
-        'req.body.confirmPassword',
-        'req.body.newPassword',
-        'req.body.token',
-        'password',
-        'newPassword',
-        'token',
-      ],
-      censor: '[REDACTED]',
-    },
+  base: {
+    service: 'auth-service',
+    env: env.nodeEnv,
   },
-  streams.length === 1 ? streams[0].stream : pino.multistream(streams),
-);
+
+  formatters: {
+    level: (label) => ({ level: label }),
+  },
+
+  timestamp: pino.stdTimeFunctions.epochTime,
+
+  redact: {
+    paths: [
+      'req.headers.authorization',
+      'req.body.password',
+      'req.body.confirmPassword',
+      'req.body.newPassword',
+      'req.body.token',
+      'password',
+      'newPassword',
+      'token',
+    ],
+    censor: '[REDACTED]',
+  },
+});
 
 export default logger;
