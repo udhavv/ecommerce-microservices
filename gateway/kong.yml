@@ -1,0 +1,64 @@
+_format_version: "3.0"
+
+# ==============================================================================
+# Global Plugins (Applied to all services and routes)
+# ==============================================================================
+plugins:
+  - name: cors
+    config:
+      origins:
+        - "http://localhost:3000"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      headers:
+        - Accept
+        - Accept-Version
+        - Content-Length
+        - Content-MD5
+        - Content-Type
+        - Date
+        - Authorization
+      exposed_headers:
+        - X-Auth-Token
+      credentials: true
+      max_age: 3600
+
+# ==============================================================================
+# Microservices & Routes
+# ==============================================================================
+services:
+  # ----------------------------------------------------------------------------
+  # Auth Microservice (Port 4000)
+  # ----------------------------------------------------------------------------
+  - name: auth-service
+    url: http://auth:4000
+    connect_timeout: 5000
+    write_timeout: 10000
+    read_timeout: 10000
+    routes:
+      - name: auth-routes
+        paths:
+          - /api/auth
+        strip_path: false
+
+  # ----------------------------------------------------------------------------
+  # Product Microservice (Port 4001)
+  # ----------------------------------------------------------------------------
+  - name: product-service
+    url: http://product:4001
+    connect_timeout: 5000
+    write_timeout: 10000
+    read_timeout: 10000
+    routes:
+      - name: product-routes
+        paths:
+          - /api/products
+          - /api/categories
+          - /api/variants
+          - /api/images
+        strip_path: false

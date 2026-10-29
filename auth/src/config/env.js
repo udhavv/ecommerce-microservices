@@ -61,12 +61,17 @@ import 'dotenv/config';
 const cleanStr = (value) => {
   if (typeof value !== 'string') return '';
 
-  return value
-    .trim()
-    .replace(/^(['"])(.*)\1$/, '$2')
-    .trim();
-};
+  const trimmed = value.trim();
 
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+
+  return trimmed;
+};
 const nodeEnv = cleanStr(process.env.NODE_ENV) || 'development';
 const isProduction = nodeEnv === 'production';
 

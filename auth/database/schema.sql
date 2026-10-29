@@ -61,7 +61,7 @@ CREATE TABLE security_audit_events (
 
 
 INSERT INTO roles (name)
-VALUES ('user'), ('admin')
+VALUES ('user'), ('admin'), ('seller')
 ON CONFLICT (name) DO NOTHING;
 
 

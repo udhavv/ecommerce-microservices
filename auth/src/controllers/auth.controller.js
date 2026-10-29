@@ -7,6 +7,7 @@ import {
   verifyUserEmail,
   forgotPassword as requestForgotPassword,
   resetPassword as handleResetPassword,
+  becomeSeller as handleBecomeSeller,
   AuthError,
 } from '../services/auth.service.js';
 import env from '../config/env.js';
@@ -214,7 +215,7 @@ export const login = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: 'Login successful',
-      data: { user },
+      data: { user, accessToken, refreshToken },
     });
   } catch (error) {
     return handleError(error, req, res, next);
@@ -233,7 +234,7 @@ export const refresh = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: 'Session refreshed',
-      data: { user },
+      data: { user, accessToken, refreshToken },
     });
   } catch (error) {
     if (error instanceof AuthError && error.statusCode === 401) {
@@ -269,6 +270,22 @@ export const profile = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       data: { user },
+    });
+  } catch (error) {
+    return handleError(error, req, res, next);
+  }
+};
+
+export const becomeSeller = async (req, res, next) => {
+  try {
+    logger.info({ userId: req.user?.id }, 'Processing become-seller request');
+    const { user, accessToken, refreshToken } = await handleBecomeSeller(req.user.id);
+    setAuthCookies(res, accessToken, refreshToken);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Congratulations! Your account has been upgraded to Seller.',
+      data: { user, accessToken, refreshToken },
     });
   } catch (error) {
     return handleError(error, req, res, next);

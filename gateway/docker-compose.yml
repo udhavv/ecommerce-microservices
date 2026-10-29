@@ -1,0 +1,29 @@
+services:
+  # ============================================================================
+  # Kong API Gateway (DB-less Mode)
+  # ============================================================================
+  kong:
+    image: kong:3.6-alpine
+    container_name: ecommerce-kong
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+    volumes:
+      - ./kong.yml:/etc/kong/kong.yml:ro
+    ports:
+      - "8000:8000"   # Proxy (Gateway entrypoint)
+      - "8001:8001"   # Admin API (Read-only in DB-less)
+    networks:
+      - ecommerce_network
+
+networks:
+  ecommerce_network:
+    name: ecommerce_network
+    driver: bridge

@@ -25,5 +25,6 @@ router.post('/refresh', validate(refreshSchema), authController.refresh);
 // Protected routes
 router.post('/logout', authenticate, authController.logout);
 router.get('/profile', authenticate, authController.profile);
+router.post('/become-seller', authenticate, authController.becomeSeller);
 
 export default router;

@@ -634,4 +634,70 @@ export async function getCurrentUser(userId) {
   return publicUser(user);
 }
 
+export async function becomeSeller(userId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const userRes = await client.query(
+      `SELECT id, email, display_name, status, email_verified_at, created_at
+       FROM users WHERE id = $1`,
+      [userId],
+    );
+    const user = userRes.rows[0];
+    if (!user) {
+      throw new AuthError('User not found', 404);
+    }
+    if (user.status !== 'active' || !user.email_verified_at) {
+      throw new AuthError('Only active and email-verified users can become sellers', 403);
+    }
+
+    // Assign seller role
+    await client.query(
+      `INSERT INTO user_roles (user_id, role_id)
+       SELECT $1, id FROM roles WHERE name = 'seller'
+       ON CONFLICT DO NOTHING`,
+      [userId],
+    );
+
+    const roles = await getUserRoles(client, userId);
+    const userWithRoles = { ...user, roles };
+
+    const tokenPayload = {
+      id: user.id,
+      sub: user.id,
+      email: user.email,
+      displayName: user.display_name,
+      roles,
+    };
+
+    const accessToken = generateAccessToken(tokenPayload);
+    const refreshToken = generateRefreshToken();
+    const expiry = getRefreshTokenExpiry();
+
+    await client.query(
+      `INSERT INTO sessions (user_id, refresh_token_hash, expires_at)
+       VALUES ($1, $2, $3)`,
+      [user.id, hashToken(refreshToken), expiry],
+    );
+
+    await client.query('COMMIT');
+    logger.info({ userId: user.id }, 'User upgraded to seller role');
+    await audit(user.id, event('ROLE_UPGRADED_SELLER'));
+
+    return {
+      user: publicUser(userWithRoles),
+      accessToken,
+      refreshToken,
+    };
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export { verifyAccessToken };
