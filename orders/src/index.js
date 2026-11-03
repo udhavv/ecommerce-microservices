@@ -109,6 +109,9 @@ async function startServer() {
     await client.query(`
       ALTER TABLE order_items ADD COLUMN IF NOT EXISTS seller_id UUID;
       CREATE INDEX IF NOT EXISTS idx_order_items_seller_id ON order_items (seller_id);
+      ALTER TABLE order_status_history DROP CONSTRAINT IF EXISTS order_status_history_changed_by_check;
+      ALTER TABLE order_status_history ADD CONSTRAINT order_status_history_changed_by_check 
+        CHECK (changed_by IN ('CUSTOMER', 'ADMIN', 'SELLER', 'SYSTEM', 'PAYMENT_SERVICE', 'INVENTORY_SERVICE'));
     `);
     client.release();
     logger.info({ database: env.database.database }, 'Connected to PostgreSQL database and verified schema');

@@ -1,24 +1,21 @@
 -- ============================================================
--- REVIEW & ENGAGEMENT SERVICE DATABASE
+-- REVIEW & ENGAGEMENT SERVICE DATABASE SCHEMA
+-- Target Database: test1
 -- ============================================================
-
-CREATE DATABASE review_db;
-
--- Connect to review_db before executing the remaining SQL.
-
 
 -- ============================================================
 -- 1. PRODUCT REVIEWS
 -- Stores customer reviews and ratings.
 -- ============================================================
 
-CREATE TABLE product_reviews (
+CREATE TABLE IF NOT EXISTS product_reviews (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
     product_id BIGINT NOT NULL,
     variant_id BIGINT,
 
-    user_id BIGINT NOT NULL,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    customer_name VARCHAR(255),
     order_id BIGINT,
 
     rating SMALLINT NOT NULL
@@ -29,7 +26,7 @@ CREATE TABLE product_reviews (
 
     verified_purchase BOOLEAN NOT NULL DEFAULT FALSE,
 
-    status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+    status VARCHAR(20) NOT NULL DEFAULT 'APPROVED'
         CHECK (
             status IN (
                 'PENDING',
@@ -50,30 +47,31 @@ CREATE TABLE product_reviews (
         CHECK (helpful_count >= 0),
 
     CONSTRAINT chk_review_not_helpful_count
-        CHECK (not_helpful_count >= 0),
-
-    -- One review per customer per product per order.
-    CONSTRAINT uq_user_product_order
-        UNIQUE (user_id, product_id, order_id)
+        CHECK (not_helpful_count >= 0)
 );
 
-CREATE INDEX idx_reviews_product_id
+CREATE INDEX IF NOT EXISTS idx_reviews_product_id
     ON product_reviews(product_id);
 
-CREATE INDEX idx_reviews_user_id
+CREATE INDEX IF NOT EXISTS idx_reviews_user_id
     ON product_reviews(user_id);
 
-CREATE INDEX idx_reviews_order_id
+CREATE INDEX IF NOT EXISTS idx_reviews_order_id
     ON product_reviews(order_id);
 
-CREATE INDEX idx_reviews_status
+CREATE INDEX IF NOT EXISTS idx_reviews_status
     ON product_reviews(status);
 
-CREATE INDEX idx_reviews_product_rating
+CREATE INDEX IF NOT EXISTS idx_reviews_product_rating
     ON product_reviews(product_id, rating);
 
-CREATE INDEX idx_reviews_created_at
+CREATE INDEX IF NOT EXISTS idx_reviews_created_at
     ON product_reviews(created_at DESC);
+
+-- One review per customer per product (when active)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_product_review
+    ON product_reviews(user_id, product_id)
+    WHERE deleted_at IS NULL;
 
 
 -- ============================================================
@@ -81,7 +79,7 @@ CREATE INDEX idx_reviews_created_at
 -- Stores image references for customer reviews.
 -- ============================================================
 
-CREATE TABLE review_images (
+CREATE TABLE IF NOT EXISTS review_images (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
     review_id BIGINT NOT NULL
@@ -99,7 +97,7 @@ CREATE TABLE review_images (
         CHECK (sort_order >= 0)
 );
 
-CREATE INDEX idx_review_images_review_id
+CREATE INDEX IF NOT EXISTS idx_review_images_review_id
     ON review_images(review_id);
 
 
@@ -108,13 +106,13 @@ CREATE INDEX idx_review_images_review_id
 -- Customers can mark reviews as helpful or not helpful.
 -- ============================================================
 
-CREATE TABLE review_votes (
+CREATE TABLE IF NOT EXISTS review_votes (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
     review_id BIGINT NOT NULL
         REFERENCES product_reviews(id) ON DELETE CASCADE,
 
-    user_id BIGINT NOT NULL,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
     vote_type VARCHAR(15) NOT NULL
         CHECK (
@@ -128,10 +126,10 @@ CREATE TABLE review_votes (
         UNIQUE (review_id, user_id)
 );
 
-CREATE INDEX idx_review_votes_review_id
+CREATE INDEX IF NOT EXISTS idx_review_votes_review_id
     ON review_votes(review_id);
 
-CREATE INDEX idx_review_votes_user_id
+CREATE INDEX IF NOT EXISTS idx_review_votes_user_id
     ON review_votes(user_id);
 
 
@@ -140,16 +138,17 @@ CREATE INDEX idx_review_votes_user_id
 -- Customers can ask questions about products.
 -- ============================================================
 
-CREATE TABLE product_questions (
+CREATE TABLE IF NOT EXISTS product_questions (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
     product_id BIGINT NOT NULL,
 
-    user_id BIGINT NOT NULL,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_name VARCHAR(255),
 
     question TEXT NOT NULL,
 
-    status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+    status VARCHAR(20) NOT NULL DEFAULT 'PUBLISHED'
         CHECK (
             status IN (
                 'PENDING',
@@ -164,13 +163,13 @@ CREATE TABLE product_questions (
     deleted_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_questions_product_id
+CREATE INDEX IF NOT EXISTS idx_questions_product_id
     ON product_questions(product_id);
 
-CREATE INDEX idx_questions_user_id
+CREATE INDEX IF NOT EXISTS idx_questions_user_id
     ON product_questions(user_id);
 
-CREATE INDEX idx_questions_status
+CREATE INDEX IF NOT EXISTS idx_questions_status
     ON product_questions(status);
 
 
@@ -179,13 +178,14 @@ CREATE INDEX idx_questions_status
 -- Sellers, admins, or customers can answer questions.
 -- ============================================================
 
-CREATE TABLE product_answers (
+CREATE TABLE IF NOT EXISTS product_answers (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
     question_id BIGINT NOT NULL
         REFERENCES product_questions(id) ON DELETE CASCADE,
 
-    user_id BIGINT NOT NULL,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_name VARCHAR(255),
 
     answer TEXT NOT NULL,
 
@@ -214,10 +214,10 @@ CREATE TABLE product_answers (
     deleted_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_answers_question_id
+CREATE INDEX IF NOT EXISTS idx_answers_question_id
     ON product_answers(question_id);
 
-CREATE INDEX idx_answers_user_id
+CREATE INDEX IF NOT EXISTS idx_answers_user_id
     ON product_answers(user_id);
 
 
@@ -226,13 +226,13 @@ CREATE INDEX idx_answers_user_id
 -- Customers can report inappropriate reviews.
 -- ============================================================
 
-CREATE TABLE review_reports (
+CREATE TABLE IF NOT EXISTS review_reports (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
     review_id BIGINT NOT NULL
         REFERENCES product_reviews(id) ON DELETE CASCADE,
 
-    reported_by BIGINT NOT NULL,
+    reported_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
     reason VARCHAR(50) NOT NULL
         CHECK (
@@ -262,13 +262,13 @@ CREATE TABLE review_reports (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_reports_review_id
+CREATE INDEX IF NOT EXISTS idx_reports_review_id
     ON review_reports(review_id);
 
-CREATE INDEX idx_reports_reported_by
+CREATE INDEX IF NOT EXISTS idx_reports_reported_by
     ON review_reports(reported_by);
 
-CREATE INDEX idx_reports_status
+CREATE INDEX IF NOT EXISTS idx_reports_status
     ON review_reports(status);
 
 
@@ -277,7 +277,7 @@ CREATE INDEX idx_reports_status
 -- Tracks moderation actions performed by admins.
 -- ============================================================
 
-CREATE TABLE review_moderation_logs (
+CREATE TABLE IF NOT EXISTS review_moderation_logs (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
     review_id BIGINT
@@ -289,7 +289,7 @@ CREATE TABLE review_moderation_logs (
     answer_id BIGINT
         REFERENCES product_answers(id) ON DELETE SET NULL,
 
-    moderator_id BIGINT NOT NULL,
+    moderator_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
     action VARCHAR(30) NOT NULL
         CHECK (
@@ -315,13 +315,13 @@ CREATE TABLE review_moderation_logs (
         )
 );
 
-CREATE INDEX idx_moderation_review_id
+CREATE INDEX IF NOT EXISTS idx_moderation_review_id
     ON review_moderation_logs(review_id);
 
-CREATE INDEX idx_moderation_moderator_id
+CREATE INDEX IF NOT EXISTS idx_moderation_moderator_id
     ON review_moderation_logs(moderator_id);
 
-CREATE INDEX idx_moderation_created_at
+CREATE INDEX IF NOT EXISTS idx_moderation_created_at
     ON review_moderation_logs(created_at DESC);
 
 
@@ -330,7 +330,7 @@ CREATE INDEX idx_moderation_created_at
 -- Stores aggregated ratings for fast product queries.
 -- ============================================================
 
-CREATE TABLE product_rating_summaries (
+CREATE TABLE IF NOT EXISTS product_rating_summaries (
     product_id BIGINT PRIMARY KEY,
 
     total_reviews INTEGER NOT NULL DEFAULT 0,
@@ -367,7 +367,7 @@ CREATE TABLE product_rating_summaries (
 -- Prevents duplicate review submissions on request retries.
 -- ============================================================
 
-CREATE TABLE review_idempotency (
+CREATE TABLE IF NOT EXISTS review_idempotency (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
     idempotency_key VARCHAR(255) NOT NULL UNIQUE,
@@ -382,10 +382,5 @@ CREATE TABLE review_idempotency (
     expires_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_review_idempotency_expiry
+CREATE INDEX IF NOT EXISTS idx_review_idempotency_expiry
     ON review_idempotency(expires_at);
-
-
--- ============================================================
--- END OF REVIEW SERVICE SCHEMA
--- ============================================================

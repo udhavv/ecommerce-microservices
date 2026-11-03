@@ -13,7 +13,7 @@ export const mockGateway = {
    */
   async charge({
     amount,
-    currency = 'USD',
+    currency = 'npr',
     payment_method = 'MOCK_CARD',
     card_number = '4242 4242 4242 4242',
     mock_action = 'SUCCESS',

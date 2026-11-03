@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS payments (
 
     -- Financial amounts
     amount NUMERIC(12, 2) NOT NULL,
-    currency CHAR(3) NOT NULL DEFAULT 'USD',
+    currency CHAR(3) NOT NULL DEFAULT 'npr',
 
     -- Payment status lifecycle
     status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT transactions_type_check CHECK (
+        
         transaction_type IN ('AUTHORIZE', 'CAPTURE', 'REFUND', 'VOID', 'DECLINE')
     ),
     CONSTRAINT transactions_status_check CHECK (

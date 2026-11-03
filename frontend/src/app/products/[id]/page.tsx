@@ -11,6 +11,9 @@ import { InventoryItem } from '@/types/inventory';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import DeleteConfirmModal from '@/components/products/DeleteConfirmModal';
 import StockAdjustmentModal from '@/components/inventory/StockAdjustmentModal';
+import ProductReviewsSection from '@/components/reviews/ProductReviewsSection';
+import reviewService from '@/services/review.service';
+import { ProductRatingSummary } from '@/types/review';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { addToCart, openCart } from '@/store/slices/cartSlice';
 import {
@@ -31,6 +34,7 @@ import {
   Check,
   Boxes,
   SlidersHorizontal,
+  Star,
 } from 'lucide-react';
 
 interface ProductPageProps {
@@ -48,6 +52,7 @@ function ProductDetailContent({ params }: ProductPageProps) {
 
   const [product, setProduct] = useState<Product | null>(null);
   const [inventory, setInventory] = useState<InventoryItem | null>(null);
+  const [summary, setSummary] = useState<ProductRatingSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeImage, setActiveImage] = useState<string>('');
@@ -85,6 +90,16 @@ function ProductDetailContent({ params }: ProductPageProps) {
           }
         } catch {
           // Inventory service offline or not initialized for this item
+        }
+
+        // Fetch live rating summary for this product
+        try {
+          const sumData = await reviewService.getProductRatingSummary(data.id);
+          if (isMounted && sumData) {
+            setSummary(sumData);
+          }
+        } catch {
+          // Review service offline or not initialized for this item
         }
       } catch (err: unknown) {
         if (isMounted) {
@@ -472,6 +487,30 @@ function ProductDetailContent({ params }: ProductPageProps) {
                   {product.name}
                 </h1>
 
+                {/* Live Star Rating Snippet */}
+                <div className="flex items-center gap-3 pt-1">
+                  <a
+                    href="#customer-feedback"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-indigo-600 transition group"
+                  >
+                    <div className="flex items-center gap-1 text-amber-500 font-extrabold">
+                      <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                      <span>
+                        {summary && Number(summary.total_reviews) > 0
+                          ? Number(summary.average_rating).toFixed(1)
+                          : 'New'}
+                      </span>
+                    </div>
+                    <span className="text-slate-400 group-hover:text-indigo-600 transition">
+                      ({summary ? summary.total_reviews : 0}{' '}
+                      {summary?.total_reviews === 1 ? 'review' : 'reviews'})
+                    </span>
+                    <span className="text-indigo-600 font-bold ml-1 text-[11px] underline">
+                      See all reviews
+                    </span>
+                  </a>
+                </div>
+
                 {/* Price Display */}
                 <div className="flex items-baseline gap-3 pt-2">
                   <span className="text-3xl sm:text-4xl font-extrabold text-slate-900">
@@ -613,6 +652,9 @@ function ProductDetailContent({ params }: ProductPageProps) {
             </div>
           </div>
         </div>
+
+        {/* Customer Reviews & Feedback Section */}
+        <ProductReviewsSection productId={product.id} productName={product.name} />
       </div>
 
       {/* Edit Modal */}

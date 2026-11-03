@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
 import productService from '@/services/product.service';
 import inventoryService from '@/services/inventory.service';
+import reviewService from '@/services/review.service';
 import { Product } from '@/types/product';
 import { useAppDispatch } from '@/store/hooks';
 import { addToCart } from '@/store/slices/cartSlice';
@@ -32,6 +33,7 @@ export default function Home() {
   const dispatch = useAppDispatch();
   const [products, setProducts] = useState<Product[]>([]);
   const [stockMap, setStockMap] = useState<Record<string, { available: number; isLow: boolean }>>({});
+  const [ratingMap, setRatingMap] = useState<Record<string, { average: number; count: number }>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -48,10 +50,13 @@ export default function Home() {
         const prodList = res.data.products;
         setProducts(prodList);
 
-        // Fetch live inventory in parallel for products
+        // Fetch live inventory and rating summaries in parallel for products
         const stockEntries: Record<string, { available: number; isLow: boolean }> = {};
+        const ratingEntries: Record<string, { average: number; count: number }> = {};
+
         await Promise.all(
           prodList.map(async (p) => {
+            // Inventory fetch
             try {
               const invItems = await inventoryService.getByProductId(p.id);
               if (invItems && invItems.length > 0) {
@@ -66,9 +71,23 @@ export default function Home() {
             } catch {
               stockEntries[String(p.id)] = { available: 10, isLow: false };
             }
+
+            // Rating summary fetch
+            try {
+              const sum = await reviewService.getProductRatingSummary(p.id);
+              if (sum && Number(sum.total_reviews) > 0) {
+                ratingEntries[String(p.id)] = {
+                  average: Number(sum.average_rating) || 0,
+                  count: Number(sum.total_reviews) || 0,
+                };
+              }
+            } catch {
+              // Graceful fallback
+            }
           })
         );
         setStockMap(stockEntries);
+        setRatingMap(ratingEntries);
       } else {
         setProducts([]);
       }
@@ -406,8 +425,14 @@ export default function Home() {
                       </span>
                       <div className="flex items-center gap-1 text-amber-500 font-bold">
                         <Star className="h-3.5 w-3.5 fill-amber-400" />
-                        <span>4.9</span>
-                        <span className="text-slate-400 font-normal">(Verified)</span>
+                        <span>
+                          {ratingMap[String(product.id)]
+                            ? ratingMap[String(product.id)].average.toFixed(1)
+                            : 'New'}
+                        </span>
+                        <span className="text-slate-400 font-normal">
+                          ({ratingMap[String(product.id)] ? ratingMap[String(product.id)].count : 0})
+                        </span>
                       </div>
                     </div>
 

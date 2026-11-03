@@ -145,6 +145,7 @@ CREATE TABLE order_status_history (
         changed_by IN (
             'CUSTOMER',
             'ADMIN',
+            'SELLER',
             'SYSTEM',
             'PAYMENT_SERVICE',
             'INVENTORY_SERVICE'
@@ -198,3 +199,8 @@ CREATE INDEX idx_outbox_pending
     WHERE published_at IS NULL;
 
 COMMIT;
+
+
+
+
+

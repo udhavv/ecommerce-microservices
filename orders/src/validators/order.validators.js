@@ -6,7 +6,7 @@ const addressSchema = z.object({
   state: z.string().min(2, 'State / Province is required'),
   postal_code: z.string().min(2, 'Postal code is required'),
   country: z.string().min(2, 'Country code or name is required'),
-  phone: z.string().optional(),
+  phone: z.string().min(10, 'phone number is required'),
 });
 
 const orderItemInputSchema = z.object({

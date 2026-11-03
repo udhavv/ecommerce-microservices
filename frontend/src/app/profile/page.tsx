@@ -9,6 +9,7 @@ import productService from '@/services/product.service';
 import inventoryService from '@/services/inventory.service';
 import CustomerOrdersTab from '@/components/orders/CustomerOrdersTab';
 import SellerOrdersTab from '@/components/orders/SellerOrdersTab';
+import CustomerReviewsTab from '@/components/reviews/CustomerReviewsTab';
 import { Product } from '@/types/product';
 import { InventoryItem } from '@/types/inventory';
 import ProductFormModal from '@/components/products/ProductFormModal';
@@ -42,6 +43,7 @@ import {
   AlertCircle,
   Receipt,
   ShoppingCart,
+  Star,
   Truck,
 } from 'lucide-react';
 
@@ -51,12 +53,14 @@ function ProfileContent() {
   const tabParam = searchParams.get('tab');
 
   const [activeTab, setActiveTab] = useState<
-    'profile' | 'products' | 'inventory' | 'orders' | 'seller-orders'
+    'profile' | 'products' | 'inventory' | 'orders' | 'seller-orders' | 'reviews'
   >(
     tabParam === 'orders'
       ? 'orders'
       : tabParam === 'seller-orders'
       ? 'seller-orders'
+      : tabParam === 'reviews'
+      ? 'reviews'
       : tabParam === 'inventory'
       ? 'inventory'
       : tabParam === 'profile'
@@ -67,6 +71,7 @@ function ProfileContent() {
   useEffect(() => {
     if (tabParam === 'orders') setActiveTab('orders');
     if (tabParam === 'seller-orders') setActiveTab('seller-orders');
+    if (tabParam === 'reviews') setActiveTab('reviews');
   }, [tabParam]);
   const [refreshing, setRefreshing] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
@@ -292,6 +297,18 @@ function ProfileContent() {
           <span>My Orders</span>
         </button>
 
+        <button
+          onClick={() => setActiveTab('reviews')}
+          className={`flex items-center gap-2 px-5 py-3 text-sm font-bold border-b-2 transition -mb-px ${
+            activeTab === 'reviews'
+              ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50 rounded-t-2xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Star className="h-4 w-4" />
+          <span>My Reviews</span>
+        </button>
+
         {(isSeller || isAdmin) && (
           <button
             onClick={() => setActiveTab('seller-orders')}
@@ -354,6 +371,9 @@ function ProfileContent() {
 
       {/* SEGMENT 0: MY ORDERS (Customer Placed Orders) */}
       {activeTab === 'orders' && <CustomerOrdersTab />}
+
+      {/* SEGMENT 0.1: MY REVIEWS (Customer Given Reviews) */}
+      {activeTab === 'reviews' && <CustomerReviewsTab />}
 
       {/* SEGMENT 0.5: RECEIVED ORDERS (Seller Orders) */}
       {activeTab === 'seller-orders' && <SellerOrdersTab sellerId={user?.id} />}

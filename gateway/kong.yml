@@ -62,3 +62,18 @@ services:
           - /api/variants
           - /api/images
         strip_path: false
+
+  # ----------------------------------------------------------------------------
+  # Review & Engagement Microservice (Port 4005)
+  # ----------------------------------------------------------------------------
+  - name: review-service
+    url: http://review_section:4005
+    connect_timeout: 5000
+    write_timeout: 10000
+    read_timeout: 10000
+    routes:
+      - name: review-routes
+        paths:
+          - /api/reviews
+          - /api/questions
+        strip_path: false
