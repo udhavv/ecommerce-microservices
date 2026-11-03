@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import ReduxProvider from "@/store/provider";
 import Navbar from "@/components/navbar";
+import CartDrawer from "@/components/cart/CartDrawer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,6 +33,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-800">
         <ReduxProvider>
           <Navbar />
+          <CartDrawer />
           <main className="flex-1 flex flex-col">{children}</main>
         </ReduxProvider>
       </body>

@@ -4,6 +4,7 @@ import * as variantController from '../controllers/variant.controller.js';
 import * as imageController from '../controllers/image.controller.js';
 import { validate } from '../middleware/validate.middleware.js';
 import { authenticate, requireAuth, requireRole } from '../middleware/auth.middleware.js';
+import { uploadSingleImage } from '../middleware/upload.middleware.js';
 import {
   createProductSchema,
   updateProductSchema,
@@ -16,6 +17,15 @@ const router = Router();
 
 // Apply token extraction to all product routes
 router.use(authenticate);
+
+// Protected Product Image Upload (Uploads to Cloudinary)
+router.post(
+  '/upload-image',
+  requireAuth,
+  requireRole(['seller', 'admin']),
+  uploadSingleImage,
+  productController.uploadProductImage
+);
 
 // Public Product Endpoints
 router.get('/', validate(listProductsQuerySchema, 'query'), productController.listProducts);

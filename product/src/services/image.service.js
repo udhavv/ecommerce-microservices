@@ -1,6 +1,7 @@
 import { pool, query } from '../config/db.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import { deleteCloudinaryImage } from '../config/cloudinary.js';
 
 export const imageService = {
   /**
@@ -138,12 +139,20 @@ export const imageService = {
    * Delete an image
    */
   async deleteImage(id) {
-    const res = await query('DELETE FROM product_images WHERE id = $1 RETURNING id, product_id', [id]);
-    if (res.rows.length === 0) {
+    const existing = await query('SELECT id, product_id, image_url, alt_text FROM product_images WHERE id = $1', [id]);
+    if (existing.rows.length === 0) {
       throw new AppError('Image not found', 404);
     }
+    const img = existing.rows[0];
+    if (img.image_url) {
+      await deleteCloudinaryImage(img.image_url);
+    }
+    if (img.alt_text && img.alt_text !== img.image_url && img.alt_text.includes('/')) {
+      await deleteCloudinaryImage(img.alt_text);
+    }
 
-    logger.info({ imageId: id }, 'Product image deleted');
+    await query('DELETE FROM product_images WHERE id = $1', [id]);
+    logger.info({ imageId: id }, 'Product image deleted from DB and Cloudinary');
     return { success: true, message: 'Product image deleted successfully.' };
   },
 };

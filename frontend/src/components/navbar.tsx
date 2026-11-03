@@ -3,30 +3,65 @@
 import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
-import { LogOut, User as UserIcon, Shield, ShoppingBag, Store } from 'lucide-react';
+import { LogOut, User as UserIcon, Shield, ShoppingBag, Store, ShoppingCart } from 'lucide-react';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { openCart } from '@/store/slices/cartSlice';
 
 export default function Navbar() {
   const { user, isAuthenticated, isInitialLoading, logout } = useAuth();
+  const dispatch = useAppDispatch();
+  const { items } = useAppSelector((state) => state.cart);
+  const cartItemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Prevent SSR hydration mismatch for localStorage-backed cart count
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 bg-white/95 backdrop-blur-md shadow-xs">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* Brand */}
-        <Link
-          href="/"
-          className="flex items-center gap-2.5 font-bold text-xl tracking-tight text-slate-900 group"
-        >
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-200 transition-transform group-hover:scale-105">
-            <ShoppingBag className="h-5 w-5" />
-          </div>
-          <div className="flex flex-col">
-            <span className="leading-tight text-slate-900 font-extrabold tracking-tight">CloudStore</span>
-            <span className="text-[10px] font-medium tracking-wider uppercase text-indigo-600">Microservices</span>
-          </div>
-        </Link>
+        {/* Brand & Left Navigation */}
+        <div className="flex items-center gap-6">
+          <Link
+            href="/"
+            className="flex items-center gap-2.5 font-bold text-xl tracking-tight text-slate-900 group"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-200 transition-transform group-hover:scale-105">
+              <ShoppingBag className="h-5 w-5" />
+            </div>
+            <div className="flex flex-col">
+              <span className="leading-tight text-slate-900 font-extrabold tracking-tight">CloudStore</span>
+              <span className="text-[10px] font-medium tracking-wider uppercase text-indigo-600">Microservices</span>
+            </div>
+          </Link>
+
+          <Link
+            href="/"
+            className="hidden md:inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-indigo-600 transition"
+          >
+            <ShoppingBag className="h-3.5 w-3.5" />
+            <span>Store</span>
+          </Link>
+        </div>
 
         {/* Navigation Items */}
         <nav className="flex items-center gap-3">
+          {/* Cart Trigger Button */}
+          <button
+            onClick={() => dispatch(openCart())}
+            className="relative flex items-center justify-center h-10 w-10 rounded-xl border border-slate-200/80 bg-white text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-indigo-600 transition"
+            aria-label="View Shopping Cart"
+          >
+            <ShoppingCart className="h-5 w-5" />
+            {mounted && cartItemCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white ring-2 ring-white">
+                {cartItemCount > 99 ? '99+' : cartItemCount}
+              </span>
+            )}
+          </button>
+
           {isInitialLoading ? (
             <div className="h-9 w-24 animate-pulse rounded-lg bg-slate-200/70" />
           ) : isAuthenticated && user ? (

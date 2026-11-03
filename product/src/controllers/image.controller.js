@@ -1,4 +1,25 @@
 import imageService from '../services/image.service.js';
+import { uploadImageBuffer } from '../config/cloudinary.js';
+import { AppError } from '../middleware/errorHandler.js';
+
+export const uploadImage = async (req, res, next) => {
+  try {
+    if (!req.file || !req.file.buffer) {
+      throw new AppError('Please select an image file to upload.', 400);
+    }
+    const result = await uploadImageBuffer(req.file.buffer, 'ecommerce/products');
+    return res.status(200).json({
+      success: true,
+      message: 'Image uploaded successfully to Cloudinary',
+      data: {
+        image_url: result.secure_url,
+        public_id: result.public_id,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 export const listImages = async (req, res, next) => {
   try {

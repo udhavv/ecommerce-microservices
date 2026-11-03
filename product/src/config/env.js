@@ -44,12 +44,20 @@ const env = {
     accessSecret: cleanStr(process.env.JWT_ACCESS_SECRET) || 'dev-access-secret',
   },
 
+  inventoryUrl: cleanStr(process.env.INVENTORY_API_URL) || 'http://localhost:4002/api',
+
   logLevel: cleanStr(process.env.LOG_LEVEL) || 'info',
 
   loki: {
     url: cleanStr(process.env.GRAFANA_CLOUD_LOKI_URL),
     user: cleanStr(process.env.GRAFANA_CLOUD_LOKI_USER),
     token: cleanStr(process.env.GRAFANA_CLOUD_API_TOKEN),
+  },
+
+  cloudinary: {
+    cloudName: cleanStr(process.env.CLOUDINARY_CLOUD_NAME),
+    apiKey: cleanStr(process.env.CLOUDINARY_API_KEY),
+    apiSecret: cleanStr(process.env.CLOUDINARY_API_SECRET),
   },
 };
 

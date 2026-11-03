@@ -10,7 +10,7 @@ CREATE TABLE orders (
     order_number VARCHAR(40) NOT NULL UNIQUE,
 
     -- Reference to Auth Service. No cross-service foreign key.
-    user_id BIGINT NOT NULL,
+    user_id UUID NOT NULL,
 
     status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
     payment_status VARCHAR(30) NOT NULL DEFAULT 'PENDING',

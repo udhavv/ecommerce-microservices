@@ -1,0 +1,129 @@
+services:
+  # ============================================================================
+  # RabbitMQ Message Broker with Management Dashboard
+  # ============================================================================
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: ecommerce-rabbitmq
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "5672:5672"     # AMQP messaging protocol port
+      - "15672:15672"   # RabbitMQ Management Web UI
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - ecommerce_network
+
+  # ============================================================================
+  # PostgreSQL Database Service
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: inventory-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - inventory_postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecommerce_network
+
+  # ============================================================================
+  # Inventory Microservice
+  # ============================================================================
+  inventory-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inventory-service
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${PORT}:4002"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      PORT: ${PORT}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DATABASE_URL: ${DATABASE_URL}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE}
+      RABBITMQ_INVENTORY_QUEUE: ${RABBITMQ_INVENTORY_QUEUE}
+      RABBITMQ_PREFETCH: ${RABBITMQ_PREFETCH}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      FRONTEND_URL_DEVELOPMENT: ${FRONTEND_URL_DEVELOPMENT}
+      PRODUCTION_FRONTEND_URL: ${PRODUCTION_FRONTEND_URL}
+      VERSION: ${VERSION}
+      LOG_LEVEL: ${LOG_LEVEL}
+      GRAFANA_CLOUD_LOKI_URL: ${GRAFANA_CLOUD_LOKI_URL}
+      GRAFANA_CLOUD_LOKI_USER: ${GRAFANA_CLOUD_LOKI_USER}
+      GRAFANA_CLOUD_API_TOKEN: ${GRAFANA_CLOUD_API_TOKEN}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - ecommerce_network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+# ==============================================================================
+# Persistent Volumes
+# ==============================================================================
+volumes:
+  rabbitmq_data:
+    name: ecommerce_rabbitmq_data
+  inventory_postgres_data:
+    name: inventory_postgres_data
+
+# ==============================================================================
+# Networks
+# ==============================================================================
+networks:
+  ecommerce_network:
+    name: ecommerce_network
+    driver: bridge

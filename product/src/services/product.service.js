@@ -2,6 +2,8 @@ import { pool, query } from '../config/db.js';
 import { generateSlug } from '../utils/slug.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import { deleteCloudinaryImage } from '../config/cloudinary.js';
+import env from '../config/env.js';
 
 export const productService = {
   /**
@@ -221,6 +223,26 @@ export const productService = {
       throw new AppError('Seller identity is required to create a product.', 401);
     }
 
+    if (!data.name || !data.name.trim()) {
+      throw new AppError('Product name is required and cannot be empty.', 400);
+    }
+    if (!data.description || !data.description.trim()) {
+      throw new AppError('Product description is required and cannot be empty.', 400);
+    }
+    if (!data.brand || !data.brand.trim()) {
+      throw new AppError('Product brand is required and cannot be empty.', 400);
+    }
+    if (data.price === undefined || data.price === null || isNaN(Number(data.price)) || Number(data.price) < 0) {
+      throw new AppError('Product price is required and must be zero or positive.', 400);
+    }
+    if (!Array.isArray(data.category_ids) || data.category_ids.length === 0) {
+      throw new AppError('At least one product category is required.', 400);
+    }
+    const hasImage = data.image_url || (Array.isArray(data.images) && data.images.length > 0);
+    if (!hasImage) {
+      throw new AppError('Product image is required.', 400);
+    }
+
     const client = await pool.connect();
 
     try {
@@ -232,23 +254,28 @@ export const productService = {
       }
 
       // Check slug uniqueness
-      const existing = await client.query('SELECT id FROM products WHERE slug = $1', [slug]);
+      const existing = await client.query('SELECT id, deleted_at FROM products WHERE slug = $1', [slug]);
       if (existing.rows.length > 0) {
-        throw new AppError(`Product slug '${slug}' is already in use.`, 409);
+        if (existing.rows[0].deleted_at) {
+          // If the product occupying this slug was previously soft-deleted, remove it permanently
+          await client.query('DELETE FROM products WHERE id = $1', [existing.rows[0].id]);
+        } else {
+          throw new AppError(`Product slug '${slug}' is already in use.`, 409);
+        }
       }
 
-      // Insert product with seller_id
+      // Insert product with seller_id - ensure description and brand are non-null
       const productSql = `
         INSERT INTO products (name, slug, description, brand, status, seller_id)
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *
       `;
       const productRes = await client.query(productSql, [
-        data.name,
+        data.name.trim(),
         slug,
-        data.description || null,
-        data.brand || null,
-        data.status || 'DRAFT',
+        data.description.trim(),
+        data.brand.trim(),
+        data.status || 'ACTIVE',
         sellerId,
       ]);
       const product = productRes.rows[0];
@@ -267,51 +294,91 @@ export const productService = {
 
       // Insert variants
       const createdVariants = [];
-      if (Array.isArray(data.variants) && data.variants.length > 0) {
-        for (const v of data.variants) {
-          const vRes = await client.query(
-            `INSERT INTO product_variants 
-              (product_id, sku, variant_name, attributes, price, currency, is_active)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
-             RETURNING *`,
-            [
-              product.id,
-              v.sku,
-              v.variant_name || null,
-              v.attributes || {},
-              v.price,
-              v.currency || 'USD',
-              v.is_active ?? true,
-            ]
-          );
-          createdVariants.push(vRes.rows[0]);
-        }
+      const variantsToInsert = Array.isArray(data.variants) && data.variants.length > 0
+        ? data.variants
+        : data.price !== undefined
+        ? [{
+            sku: `SKU-${product.id}-${Date.now().toString().slice(-6)}`,
+            variant_name: 'Standard',
+            price: data.price,
+            currency: data.currency || 'USD',
+            is_active: true,
+          }]
+        : [];
+
+      for (const v of variantsToInsert) {
+        const vRes = await client.query(
+          `INSERT INTO product_variants 
+            (product_id, sku, variant_name, attributes, price, currency, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING *`,
+          [
+            product.id,
+            v.sku,
+            v.variant_name || null,
+            v.attributes || {},
+            v.price,
+            v.currency || 'USD',
+            v.is_active ?? true,
+          ]
+        );
+        createdVariants.push(vRes.rows[0]);
       }
 
       // Insert images
       const createdImages = [];
-      if (Array.isArray(data.images) && data.images.length > 0) {
-        for (const img of data.images) {
-          const imgRes = await client.query(
-            `INSERT INTO product_images
-              (product_id, variant_id, image_url, alt_text, sort_order, is_primary)
-             VALUES ($1, $2, $3, $4, $5, $6)
-             RETURNING *`,
-            [
-              product.id,
-              img.variant_id || null,
-              img.image_url,
-              img.alt_text || null,
-              img.sort_order ?? 0,
-              img.is_primary ?? false,
-            ]
-          );
-          createdImages.push(imgRes.rows[0]);
-        }
+      const imagesToInsert = Array.isArray(data.images) && data.images.length > 0
+        ? data.images
+        : data.image_url
+        ? [{
+            image_url: data.image_url,
+            alt_text: data.public_id || data.name,
+            sort_order: 0,
+            is_primary: true,
+          }]
+        : [];
+
+      for (const img of imagesToInsert) {
+        const imgRes = await client.query(
+          `INSERT INTO product_images
+            (product_id, variant_id, image_url, alt_text, sort_order, is_primary)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING *`,
+          [
+            product.id,
+            img.variant_id || null,
+            img.image_url,
+            img.alt_text || null,
+            img.sort_order ?? 0,
+            img.is_primary ?? false,
+          ]
+        );
+        createdImages.push(imgRes.rows[0]);
       }
 
       await client.query('COMMIT');
       logger.info({ productId: product.id, sellerId, name: product.name }, 'Product created by seller');
+
+      // Initialize inventory records in inventory microservice
+      for (const v of createdVariants) {
+        fetch(`${env.inventoryUrl}/inventory`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': sellerId,
+            'x-user-roles': 'seller',
+          },
+          body: JSON.stringify({
+            product_id: product.id,
+            variant_id: v.id,
+            sku: v.sku,
+            quantity_available: data.initial_stock ?? 10,
+            low_stock_threshold: data.low_stock_threshold ?? 5,
+          }),
+        }).catch((err) => {
+          logger.warn({ err: err.message, variantId: v.id }, 'Inventory service sync call skipped/offline');
+        });
+      }
 
       return {
         ...product,
@@ -334,6 +401,7 @@ export const productService = {
 
     try {
       await client.query('BEGIN');
+      console.log('this is the update product data: ', data)
 
       const existing = await client.query(
         'SELECT * FROM products WHERE id = $1 AND deleted_at IS NULL',
@@ -359,12 +427,16 @@ export const productService = {
       }
 
       if (slug !== product.slug) {
-        const dup = await client.query('SELECT id FROM products WHERE slug = $1 AND id != $2', [
+        const dup = await client.query('SELECT id, deleted_at FROM products WHERE slug = $1 AND id != $2', [
           slug,
           id,
         ]);
         if (dup.rows.length > 0) {
-          throw new AppError(`Slug '${slug}' is already taken by another product`, 409);
+          if (dup.rows[0].deleted_at) {
+            await client.query('DELETE FROM products WHERE id = $1', [dup.rows[0].id]);
+          } else {
+            throw new AppError(`Slug '${slug}' is already taken by another product`, 409);
+          }
         }
       }
 
@@ -372,8 +444,8 @@ export const productService = {
         UPDATE products
         SET name = COALESCE($1, name),
             slug = $2,
-            description = CASE WHEN $3 IS NULL THEN description ELSE $3 END,
-            brand = CASE WHEN $4 IS NULL THEN brand ELSE $4 END,
+            description =  COALESCE($3::TEXT, description),
+            brand = COALESCE($4::VARCHAR, brand),
             status = COALESCE($5, status),
             updated_at = NOW()
         WHERE id = $6
@@ -400,6 +472,84 @@ export const productService = {
         }
       }
 
+      // If variants are provided, update them
+      if (Array.isArray(data.variants) && data.variants.length > 0) {
+        await client.query('DELETE FROM product_variants WHERE product_id = $1', [id]);
+        for (const v of data.variants) {
+          await client.query(
+            `INSERT INTO product_variants 
+              (product_id, sku, variant_name, attributes, price, currency, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              id,
+              v.sku,
+              v.variant_name || null,
+              v.attributes || {},
+              v.price,
+              v.currency || 'USD',
+              v.is_active ?? true,
+            ]
+          );
+        }
+      } else if (data.price !== undefined) {
+        const varCheck = await client.query(
+          'SELECT id FROM product_variants WHERE product_id = $1 ORDER BY id ASC LIMIT 1',
+          [id]
+        );
+        if (varCheck.rows.length > 0) {
+          await client.query(
+            'UPDATE product_variants SET price = $1, updated_at = NOW() WHERE product_id = $2',
+            [data.price, id]
+          );
+        } else {
+          await client.query(
+            `INSERT INTO product_variants (product_id, sku, variant_name, price, currency, is_active)
+             VALUES ($1, $2, 'Standard', $3, 'USD', TRUE)`,
+            [id, `SKU-${id}-${Date.now().toString().slice(-6)}`, data.price]
+          );
+        }
+      }
+
+      // If images are provided, update them and delete old images from Cloudinary
+      if (Array.isArray(data.images) && data.images.length > 0) {
+        const oldImages = await client.query(
+          'SELECT image_url, alt_text FROM product_images WHERE product_id = $1',
+          [id]
+        );
+        for (const old of oldImages.rows) {
+          await deleteCloudinaryImage(old.alt_text || old.image_url);
+        }
+
+        await client.query('DELETE FROM product_images WHERE product_id = $1', [id]);
+        for (const img of data.images) {
+          await client.query(
+            `INSERT INTO product_images (product_id, image_url, alt_text, sort_order, is_primary)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [id, img.image_url, img.alt_text || data.public_id || null, img.sort_order ?? 0, img.is_primary ?? false]
+          );
+        }
+      } else if (data.image_url) {
+        const imgCheck = await client.query(
+          'SELECT id, image_url, alt_text FROM product_images WHERE product_id = $1 ORDER BY is_primary DESC, id ASC LIMIT 1',
+          [id]
+        );
+        if (imgCheck.rows.length > 0) {
+          if (imgCheck.rows[0].image_url !== data.image_url) {
+            await deleteCloudinaryImage(imgCheck.rows[0].alt_text || imgCheck.rows[0].image_url);
+          }
+          await client.query(
+            'UPDATE product_images SET image_url = $1, alt_text = $2 WHERE id = $3',
+            [data.image_url, data.public_id || data.name || product.name, imgCheck.rows[0].id]
+          );
+        } else {
+          await client.query(
+            `INSERT INTO product_images (product_id, image_url, alt_text, sort_order, is_primary)
+             VALUES ($1, $2, $3, 0, TRUE)`,
+            [id, data.image_url, data.public_id || data.name || product.name]
+          );
+        }
+      }
+
       await client.query('COMMIT');
       logger.info({ productId: id, userId: user.id }, 'Product updated');
 
@@ -413,37 +563,79 @@ export const productService = {
   },
 
   /**
-   * Delete product (soft-delete) with ownership verification
+   * Delete product (hard-delete) with ownership verification and Cloudinary cleanup
    */
   async deleteProduct(id, user) {
-    const existing = await query(
-      'SELECT seller_id, name FROM products WHERE id = $1 AND deleted_at IS NULL',
-      [id]
-    );
-    if (existing.rows.length === 0) {
-      throw new AppError('Product not found or already deleted', 404);
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const existing = await client.query(
+        'SELECT id, seller_id, name, slug FROM products WHERE id = $1',
+        [id]
+      );
+      if (existing.rows.length === 0) {
+        throw new AppError('Product not found or already deleted', 404);
+      }
+
+      const product = existing.rows[0];
+      const isOwner = String(product.seller_id) === String(user.id);
+      const isAdmin = user.roles && user.roles.includes('admin');
+
+      if (!isOwner && !isAdmin) {
+        throw new AppError('Forbidden: You can only delete products that you have listed.', 403);
+      }
+
+      // Retrieve all product images and remove them from Cloudinary
+      const imagesRes = await client.query(
+        'SELECT id, image_url, alt_text FROM product_images WHERE product_id = $1',
+        [id]
+      );
+
+      for (const img of imagesRes.rows) {
+        try {
+          if (img.image_url) {
+            await deleteCloudinaryImage(img.image_url);
+          }
+          if (img.alt_text && img.alt_text !== img.image_url && img.alt_text.includes('/')) {
+            await deleteCloudinaryImage(img.alt_text);
+          }
+        } catch (err) {
+          logger.warn(
+            { imageId: img.id, err: err.message },
+            'Error deleting Cloudinary image during product deletion'
+          );
+        }
+      }
+
+      // Hard-delete product from database (ON DELETE CASCADE removes variants, categories, and image rows)
+      const deleteSql = 'DELETE FROM products WHERE id = $1 RETURNING id, name';
+      const result = await client.query(deleteSql, [id]);
+
+      await client.query('COMMIT');
+
+      // Sync with inventory microservice to clean up inventory records for this product
+      if (env.inventoryUrl) {
+        fetch(`${env.inventoryUrl}/inventory/product/${id}`, {
+          method: 'DELETE',
+          headers: {
+            'x-user-id': String(user.id),
+            'x-user-roles': Array.isArray(user.roles) ? user.roles.join(',') : 'seller',
+          },
+        }).catch((err) => {
+          logger.debug({ err: err.message, productId: id }, 'Inventory service sync call skipped/offline');
+        });
+      }
+
+      logger.info({ productId: id, userId: user.id }, 'Product permanently deleted from database and Cloudinary');
+      return { success: true, message: `Product '${product.name}' and all associated images deleted successfully.` };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-
-    const product = existing.rows[0];
-    const isOwner = String(product.seller_id) === String(user.id);
-    const isAdmin = user.roles && user.roles.includes('admin');
-
-    if (!isOwner && !isAdmin) {
-      throw new AppError('Forbidden: You can only delete products that you have listed.', 403);
-    }
-
-    const sql = `
-      UPDATE products
-      SET deleted_at = NOW(),
-          status = 'ARCHIVED',
-          updated_at = NOW()
-      WHERE id = $1
-      RETURNING id, name
-    `;
-    const result = await query(sql, [id]);
-
-    logger.info({ productId: id, userId: user.id }, 'Product soft-deleted');
-    return { success: true, message: `Product '${result.rows[0].name}' deleted successfully.` };
   },
 };
 
