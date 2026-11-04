@@ -361,23 +361,32 @@ export const productService = {
 
       // Initialize inventory records in inventory microservice
       for (const v of createdVariants) {
-        fetch(`${env.inventoryUrl}/inventory`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': sellerId,
-            'x-user-roles': 'seller',
-          },
-          body: JSON.stringify({
-            product_id: product.id,
-            variant_id: v.id,
-            sku: v.sku,
-            quantity_available: data.initial_stock ?? 10,
-            low_stock_threshold: data.low_stock_threshold ?? 5,
-          }),
-        }).catch((err) => {
+        try {
+          const invRes = await fetch(`${env.inventoryUrl}/inventory`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-internal-service': 'product-service',
+              'x-user-id': sellerId,
+              'x-user-roles': 'seller',
+            },
+            body: JSON.stringify({
+              product_id: product.id,
+              variant_id: v.id,
+              sku: v.sku,
+              quantity_available: data.initial_stock !== undefined ? Number(data.initial_stock) : 50,
+              low_stock_threshold: data.low_stock_threshold !== undefined ? Number(data.low_stock_threshold) : 5,
+            }),
+          });
+          if (!invRes.ok) {
+            const errText = await invRes.text();
+            logger.warn({ status: invRes.status, errText, variantId: v.id }, 'Inventory initialization non-200 response');
+          } else {
+            logger.info({ variantId: v.id, sku: v.sku }, 'Inventory initialized for variant');
+          }
+        } catch (err) {
           logger.warn({ err: err.message, variantId: v.id }, 'Inventory service sync call skipped/offline');
-        });
+        }
       }
 
       return {

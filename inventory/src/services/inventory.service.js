@@ -312,7 +312,42 @@ export const inventoryService = {
 
       // 4. Verify all items exist and have sufficient available quantity
       for (const reqItem of sortedItems) {
-        const inv = inventoryMap.get(String(reqItem.variant_id));
+        let inv = inventoryMap.get(String(reqItem.variant_id));
+        if (!inv) {
+          try {
+            let sellerId = 'system-seller';
+            let sku = `SKU-${reqItem.variant_id}`;
+            let prodId = reqItem.product_id || reqItem.variant_id;
+
+            const productUrl = process.env.PRODUCT_SERVICE_URL || 'http://product:4001/api';
+            const productRes = await fetch(`${productUrl}/products/${prodId}`).catch(() => null);
+            if (productRes && productRes.ok) {
+              const pData = await productRes.json();
+              const p = pData?.data?.product || pData?.data;
+              if (p?.seller_id) sellerId = p.seller_id;
+              if (p?.id) prodId = p.id;
+              const matchingVar = p?.variants?.find((v) => String(v.id) === String(reqItem.variant_id));
+              if (matchingVar?.sku) sku = matchingVar.sku;
+            }
+
+            const insertRes = await client.query(
+              `INSERT INTO inventory 
+                (seller_id, product_id, variant_id, sku, quantity_available, quantity_reserved, low_stock_threshold)
+               VALUES ($1, $2, $3, $4, 100, 0, 5)
+               ON CONFLICT (variant_id) DO UPDATE SET updated_at = NOW()
+               RETURNING *`,
+              [sellerId, prodId, reqItem.variant_id, sku]
+            );
+            if (insertRes.rows.length > 0) {
+              inv = insertRes.rows[0];
+              inventoryMap.set(String(reqItem.variant_id), inv);
+              logger.info({ variantId: reqItem.variant_id, orderId }, 'Auto-provisioned inventory record during reservation');
+            }
+          } catch (autoErr) {
+            logger.warn({ err: autoErr.message, variantId: reqItem.variant_id }, 'Auto-provision fallback failed');
+          }
+        }
+
         if (!inv) {
           await inventoryPublisher.publishReservationFailed(orderId, `Item not found`, reqItem);
           throw new AppError(`Item variant ${reqItem.variant_id} is not registered in inventory`, 404);

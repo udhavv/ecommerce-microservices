@@ -1,0 +1,23 @@
+{
+  "name": "ecommerce-platform",
+  "version": "1.0.0",
+  "description": "Full-stack E-Commerce microservices ecosystem with centralized Grafana Loki logging & Kong API Gateway",
+  "type": "module",
+  "scripts": {
+    "dev": "node dev-runner.js",
+    "dev:all": "node dev-runner.js",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
+    "gateway:up": "docker compose -f gateway/docker-compose.yml up -d kong",
+    "gateway:down": "docker compose -f gateway/docker-compose.yml down",
+    "test:loggers": "node -e \"console.log('Loggers test')\""
+  },
+  "keywords": [
+    "ecommerce",
+    "microservices",
+    "kong-gateway",
+    "grafana-loki",
+    "pino"
+  ],
+  "license": "ISC"
+}

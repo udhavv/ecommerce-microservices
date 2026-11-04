@@ -1,4 +1,3 @@
-import axios from 'axios';
 import {
   InventoryItem,
   StockAdjustmentInput,
@@ -6,17 +5,13 @@ import {
   SingleInventoryResponse,
   InventoryMovementsResponse,
 } from '@/types/inventory';
-import { getErrorMessage } from '@/lib/axios';
+import { createApiClient, getErrorMessage } from '@/lib/axios';
 
 const INVENTORY_BASE_URL =
   process.env.NEXT_PUBLIC_INVENTORY_API_URL || 'http://localhost:4002/api';
 
-export const inventoryApiClient = axios.create({
+export const inventoryApiClient = createApiClient({
   baseURL: INVENTORY_BASE_URL,
-  withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-  },
   timeout: 10000,
 });
 

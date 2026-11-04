@@ -1,0 +1,121 @@
+_format_version: "3.0"
+
+# ==============================================================================
+# Global Plugins (Applied to all services and routes)
+# ==============================================================================
+plugins:
+  - name: cors
+    config:
+      origins:
+        - "http://localhost:3000"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      headers:
+        - Accept
+        - Accept-Version
+        - Content-Length
+        - Content-MD5
+        - Content-Type
+        - Date
+        - Authorization
+      exposed_headers:
+        - X-Auth-Token
+      credentials: true
+      max_age: 3600
+
+# ==============================================================================
+# Microservices & Routes (Local Host Machine Targets)
+# ==============================================================================
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Auth Microservice (Port 4000)
+  # ----------------------------------------------------------------------------
+  - name: auth-service
+    url: http://host.docker.internal:4000
+    connect_timeout: 5000
+    write_timeout: 10000
+    read_timeout: 10000
+    routes:
+      - name: auth-routes
+        paths:
+          - /api/auth
+        strip_path: false
+
+  # ----------------------------------------------------------------------------
+  # 2. Product Microservice (Port 4001)
+  # ----------------------------------------------------------------------------
+  - name: product-service
+    url: http://host.docker.internal:4001
+    connect_timeout: 5000
+    write_timeout: 10000
+    read_timeout: 10000
+    routes:
+      - name: product-routes
+        paths:
+          - /api/products
+          - /api/categories
+          - /api/variants
+          - /api/images
+        strip_path: false
+
+  # ----------------------------------------------------------------------------
+  # 3. Inventory Microservice (Port 4002)
+  # ----------------------------------------------------------------------------
+  - name: inventory-service
+    url: http://host.docker.internal:4002
+    connect_timeout: 5000
+    write_timeout: 10000
+    read_timeout: 10000
+    routes:
+      - name: inventory-routes
+        paths:
+          - /api/inventory
+        strip_path: false
+
+  # ----------------------------------------------------------------------------
+  # 4. Order Microservice (Port 4003)
+  # ----------------------------------------------------------------------------
+  - name: order-service
+    url: http://host.docker.internal:4003
+    connect_timeout: 5000
+    write_timeout: 10000
+    read_timeout: 10000
+    routes:
+      - name: order-routes
+        paths:
+          - /api/orders
+        strip_path: false
+
+  # ----------------------------------------------------------------------------
+  # 5. Payment Microservice (Port 4004)
+  # ----------------------------------------------------------------------------
+  - name: payment-service
+    url: http://host.docker.internal:4004
+    connect_timeout: 5000
+    write_timeout: 10000
+    read_timeout: 10000
+    routes:
+      - name: payment-routes
+        paths:
+          - /api/payments
+        strip_path: false
+
+  # ----------------------------------------------------------------------------
+  # 6. Review & Feedback Microservice (Port 4005)
+  # ----------------------------------------------------------------------------
+  - name: review-service
+    url: http://host.docker.internal:4005
+    connect_timeout: 5000
+    write_timeout: 10000
+    read_timeout: 10000
+    routes:
+      - name: review-routes
+        paths:
+          - /api/reviews
+          - /api/questions
+        strip_path: false

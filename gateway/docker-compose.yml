@@ -1,11 +1,194 @@
 services:
   # ============================================================================
-  # Kong API Gateway (DB-less Mode)
+  # RabbitMQ Message Broker (Port 5672 / Management UI 15672)
+  # ============================================================================
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: ecommerce-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    networks:
+      - ecommerce_network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 8s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ============================================================================
+  # 1. Auth Microservice (Port 4000)
+  # ============================================================================
+  auth:
+    build:
+      context: ../auth
+      dockerfile: Dockerfile
+    container_name: auth-service
+    restart: unless-stopped
+    env_file: ../auth/.env
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=host.docker.internal
+      - DATABASE_URL=postgresql://postgres:hellowpin1@host.docker.internal:5432/test1
+    ports:
+      - "4000:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - ecommerce_network
+
+  # ============================================================================
+  # 2. Product Microservice (Port 4001)
+  # ============================================================================
+  product:
+    build:
+      context: ../product
+      dockerfile: Dockerfile
+    container_name: product-service
+    restart: unless-stopped
+    env_file: ../product/.env
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=host.docker.internal
+      - DATABASE_URL=postgresql://postgres:hellowpin1@host.docker.internal:5432/test1
+      - INVENTORY_API_URL=http://inventory:4002/api
+    ports:
+      - "4001:4001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - ecommerce_network
+
+  # ============================================================================
+  # 3. Inventory Microservice (Port 4002)
+  # ============================================================================
+  inventory:
+    build:
+      context: ../inventory
+      dockerfile: Dockerfile
+    container_name: inventory-service
+    restart: unless-stopped
+    env_file: ../inventory/.env
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=host.docker.internal
+      - DATABASE_URL=postgresql://postgres:hellowpin1@host.docker.internal:5432/inventory
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - PRODUCT_SERVICE_URL=http://product:4001/api
+    ports:
+      - "4002:4002"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - ecommerce_network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # ============================================================================
+  # 4. Order Microservice (Port 4003)
+  # ============================================================================
+  orders:
+    build:
+      context: ../orders
+      dockerfile: Dockerfile
+    container_name: order-service
+    restart: unless-stopped
+    env_file: ../orders/.env
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=host.docker.internal
+      - DATABASE_URL=postgresql://postgres:hellowpin1@host.docker.internal:5432/test1
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - PRODUCT_SERVICE_URL=http://product:4001/api
+      - INVENTORY_SERVICE_URL=http://inventory:4002/api
+    ports:
+      - "4003:4003"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - ecommerce_network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      product:
+        condition: service_started
+      inventory:
+        condition: service_started
+
+  # ============================================================================
+  # 5. Payment Microservice (Port 4004)
+  # ============================================================================
+  payment:
+    build:
+      context: ../payment
+      dockerfile: Dockerfile
+    container_name: payment-service
+    restart: unless-stopped
+    env_file: ../payment/.env
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=host.docker.internal
+      - DATABASE_URL=postgresql://postgres:hellowpin1@host.docker.internal:5432/payment
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - ORDER_SERVICE_URL=http://orders:4003/api
+    ports:
+      - "4004:4004"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - ecommerce_network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      orders:
+        condition: service_started
+
+  # ============================================================================
+  # 6. Review & Feedback Microservice (Port 4005)
+  # ============================================================================
+  review_section:
+    build:
+      context: ../review_section
+      dockerfile: Dockerfile
+    container_name: review-section-service
+    restart: unless-stopped
+    env_file: ../review_section/.env
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=host.docker.internal
+      - DATABASE_URL=postgresql://postgres:hellowpin1@host.docker.internal:5432/test1
+      - AUTH_SERVICE_URL=http://auth:4000/api/auth
+      - PRODUCT_SERVICE_URL=http://product:4001/api
+      - ORDER_SERVICE_URL=http://orders:4003/api
+    ports:
+      - "4005:4005"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - ecommerce_network
+    depends_on:
+      auth:
+        condition: service_started
+      product:
+        condition: service_started
+      orders:
+        condition: service_started
+
+  # ============================================================================
+  # Kong API Gateway (DB-less Mode on Port 8000)
   # ============================================================================
   kong:
-    image: kong:3.6-alpine
+    image: kong:3.9.4
     container_name: ecommerce-kong
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
@@ -18,10 +201,23 @@ services:
     volumes:
       - ./kong.yml:/etc/kong/kong.yml:ro
     ports:
-      - "8000:8000"   # Proxy (Gateway entrypoint)
-      - "8001:8001"   # Admin API (Read-only in DB-less)
+      - "8000:8000"   # Gateway Proxy Entrypoint
+      - "8001:8001"   # Kong Admin API
     networks:
       - ecommerce_network
+    depends_on:
+      auth:
+        condition: service_started
+      product:
+        condition: service_started
+      inventory:
+        condition: service_started
+      orders:
+        condition: service_started
+      payment:
+        condition: service_started
+      review_section:
+        condition: service_started
 
 networks:
   ecommerce_network:

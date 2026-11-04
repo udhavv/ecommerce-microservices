@@ -1,4 +1,3 @@
-import axios from 'axios';
 import {
   Product,
   ProductFilterParams,
@@ -9,17 +8,13 @@ import {
   UpdateProductInput,
   Category,
 } from '@/types/product';
-import { getErrorMessage } from '@/lib/axios';
+import { createApiClient, getErrorMessage } from '@/lib/axios';
 
 const PRODUCT_BASE_URL =
   process.env.NEXT_PUBLIC_PRODUCT_API_URL || 'http://localhost:4001/api';
 
-export const productApiClient = axios.create({
+export const productApiClient = createApiClient({
   baseURL: PRODUCT_BASE_URL,
-  withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-  },
   timeout: 25000,
 });
 

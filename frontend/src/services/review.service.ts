@@ -1,4 +1,3 @@
-import axios from 'axios';
 import {
   ProductReview,
   ProductRatingSummary,
@@ -11,17 +10,13 @@ import {
   CreateAnswerInput,
   ReviewVoteResult,
 } from '@/types/review';
-import { getErrorMessage } from '@/lib/axios';
+import { createApiClient, getErrorMessage } from '@/lib/axios';
 
 const REVIEW_BASE_URL =
   process.env.NEXT_PUBLIC_REVIEW_API_URL || 'http://localhost:4005/api';
 
-export const reviewApiClient = axios.create({
+export const reviewApiClient = createApiClient({
   baseURL: REVIEW_BASE_URL,
-  withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-  },
   timeout: 15000,
 });
 

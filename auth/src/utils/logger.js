@@ -1,4 +1,5 @@
 import pino from 'pino';
+import pretty from 'pino-pretty';
 import env from '../config/env.js';
 import { createLokiStream } from './lokiPusher.js';
 
@@ -8,10 +9,18 @@ const logLevel =
   process.env.LOG_LEVEL ||
   (env.nodeEnv === 'test' ? 'silent' : isProduction ? 'info' : 'debug');
 
-const streams = [{ stream: process.stdout }];
+const stdoutStream = !isProduction
+  ? pretty({
+      colorize: true,
+      translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
+      ignore: 'pid,hostname',
+    })
+  : process.stdout;
+
+const streams = [{ stream: stdoutStream }];
 
 // Direct Loki stream for cloud environments like Render
-if (env.loki.url && env.nodeEnv !== 'test') {
+if (env.loki?.url && env.nodeEnv !== 'test') {
   const lokiStream = createLokiStream();
   if (lokiStream) {
     streams.push({ stream: lokiStream });
@@ -44,7 +53,7 @@ const logger = pino(
       censor: '[REDACTED]',
     },
   },
-  streams.length === 1 ? streams[0].stream : pino.multistream(streams),
+  streams.length === 1 ? streams[0].stream : pino.multistream(streams)
 );
 
 export default logger;

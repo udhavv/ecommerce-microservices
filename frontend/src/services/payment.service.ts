@@ -1,4 +1,3 @@
-import axios from 'axios';
 import {
   Payment,
   ProcessPaymentInput,
@@ -6,17 +5,13 @@ import {
   SinglePaymentResponse,
   ListPaymentsResponse,
 } from '@/types/payment';
-import { getErrorMessage } from '@/lib/axios';
+import { createApiClient, getErrorMessage } from '@/lib/axios';
 
 const PAYMENT_BASE_URL =
   process.env.NEXT_PUBLIC_PAYMENT_API_URL || 'http://localhost:4004/api';
 
-export const paymentApiClient = axios.create({
+export const paymentApiClient = createApiClient({
   baseURL: PAYMENT_BASE_URL,
-  withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-  },
   timeout: 25000,
 });
 

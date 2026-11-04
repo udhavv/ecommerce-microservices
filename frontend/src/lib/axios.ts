@@ -1,16 +1,12 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import axios, {
+  AxiosError,
+  AxiosInstance,
+  CreateAxiosDefaults,
+  InternalAxiosRequestConfig,
+} from 'axios';
 
-const AUTH_BASE_URL =
+export const AUTH_BASE_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL || 'http://localhost:4000/api/auth';
-
-export const authApiClient = axios.create({
-  baseURL: AUTH_BASE_URL,
-  withCredentials: true, // Enables browser to automatically send and store HTTP-only cookies
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  timeout: 15000,
-});
 
 let isRefreshing = false;
 let failedQueue: Array<{
@@ -29,68 +25,105 @@ const processQueue = (error: unknown = null) => {
   failedQueue = [];
 };
 
-// Response Interceptor: Silent token refresh via HTTP-only cookies
-authApiClient.interceptors.response.use(
-  (response) => response,
-  async (error: AxiosError) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & {
-      _retry?: boolean;
-    };
+/**
+ * Triggers a silent token refresh using the httpOnly refreshToken cookie.
+ * Shared across all microservice API clients.
+ */
+export async function refreshAccessToken(): Promise<void> {
+  await axios.post(
+    `${AUTH_BASE_URL}/refresh`,
+    {},
+    {
+      withCredentials: true,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+}
 
-    if (!error.response || !originalRequest) {
+/**
+ * Attaches the automatic 401 token refresh interceptor to any Axios instance.
+ * When any request fails with 401 (token expired):
+ * 1. Pauses other failing requests and queues them.
+ * 2. Invokes /api/auth/refresh to renew the httpOnly accessToken cookie.
+ * 3. Automatically retries the original request and all queued requests.
+ * 4. Eliminates the need for manual page refreshes or relogins on expired tokens.
+ */
+export function attachAuthRefreshInterceptor(client: AxiosInstance): AxiosInstance {
+  client.interceptors.response.use(
+    (response) => response,
+    async (error: AxiosError) => {
+      const originalRequest = error.config as InternalAxiosRequestConfig & {
+        _retry?: boolean;
+      };
+
+      if (!error.response || !originalRequest) {
+        return Promise.reject(error);
+      }
+
+      const status = error.response.status;
+      const url = originalRequest.url || '';
+
+      // Skip refresh for auth initiation or refresh endpoints to prevent infinite loops
+      const isAuthExempt =
+        url.includes('/login') ||
+        url.includes('/register') ||
+        url.includes('/refresh') ||
+        url.includes('/forgot-password') ||
+        url.includes('/reset-password');
+
+      if (status === 401 && !originalRequest._retry && !isAuthExempt) {
+        if (isRefreshing) {
+          return new Promise((resolve, reject) => {
+            failedQueue.push({ resolve, reject });
+          })
+            .then(() => client(originalRequest))
+            .catch((err) => Promise.reject(err));
+        }
+
+        originalRequest._retry = true;
+        isRefreshing = true;
+
+        try {
+          await refreshAccessToken();
+          processQueue(null);
+          // Retry the original failed request with the newly issued httpOnly accessToken cookie
+          return client(originalRequest);
+        } catch (refreshError) {
+          processQueue(refreshError);
+          return Promise.reject(refreshError);
+        } finally {
+          isRefreshing = false;
+        }
+      }
+
       return Promise.reject(error);
     }
+  );
 
-    const status = error.response.status;
-    const url = originalRequest.url || '';
+  return client;
+}
 
-    // Do not attempt refresh on authentication initiation routes or /refresh itself
-    const isAuthRoute =
-      url.includes('/login') ||
-      url.includes('/register') ||
-      url.includes('/refresh') ||
-      url.includes('/forgot-password') ||
-      url.includes('/reset-password');
+/**
+ * Factory helper to create an Axios client with credentials and automatic 401 token refresh.
+ */
+export function createApiClient(config: CreateAxiosDefaults = {}): AxiosInstance {
+  const client = axios.create({
+    withCredentials: true,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    ...config,
+  });
 
-    if (status === 401 && !originalRequest._retry && !isAuthRoute) {
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        })
-          .then(() => authApiClient(originalRequest))
-          .catch((err) => Promise.reject(err));
-      }
+  return attachAuthRefreshInterceptor(client);
+}
 
-      originalRequest._retry = true;
-      isRefreshing = true;
-
-      try {
-        // Send request to refresh endpoint. Browser automatically includes httpOnly refreshToken cookie.
-        await axios.post(
-          `${AUTH_BASE_URL}/refresh`,
-          {},
-          {
-            withCredentials: true,
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-
-        processQueue(null);
-        // Retry the original request; the browser will automatically include the newly refreshed httpOnly accessToken cookie
-        return authApiClient(originalRequest);
-      } catch (refreshError) {
-        processQueue(refreshError);
-        return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
-      }
-    }
-
-    return Promise.reject(error);
-  }
-);
+export const authApiClient = createApiClient({
+  baseURL: AUTH_BASE_URL,
+  timeout: 15000,
+});
 
 /**
  * Extracts a user-friendly error message from Axios errors
@@ -106,7 +139,7 @@ export function getErrorMessage(error: unknown): string {
       }
     }
     if (error.code === 'ERR_NETWORK') {
-      return 'Cannot connect to authentication service. Please check your backend connection.';
+      return 'Cannot connect to backend service. Please check your connection or gateway.';
     }
     if (error.message) {
       return error.message;

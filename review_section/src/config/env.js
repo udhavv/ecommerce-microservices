@@ -53,6 +53,12 @@ const env = {
   },
 
   logLevel: cleanStr(process.env.LOG_LEVEL) || 'info',
+
+  loki: {
+    url: cleanStr(process.env.GRAFANA_CLOUD_LOKI_URL),
+    user: cleanStr(process.env.GRAFANA_CLOUD_LOKI_USER),
+    token: cleanStr(process.env.GRAFANA_CLOUD_API_TOKEN),
+  },
 };
 
 export default env;

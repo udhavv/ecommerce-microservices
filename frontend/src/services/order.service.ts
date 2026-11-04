@@ -1,4 +1,3 @@
-import axios from 'axios';
 import {
   CreateOrderInput,
   Order,
@@ -6,17 +5,13 @@ import {
   ListOrdersResponse,
   SingleOrderResponse,
 } from '@/types/order';
-import { getErrorMessage } from '@/lib/axios';
+import { createApiClient, getErrorMessage } from '@/lib/axios';
 
 const ORDER_BASE_URL =
   process.env.NEXT_PUBLIC_ORDER_API_URL || 'http://localhost:4003/api';
 
-export const orderApiClient = axios.create({
+export const orderApiClient = createApiClient({
   baseURL: ORDER_BASE_URL,
-  withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-  },
   timeout: 25000,
 });
 
