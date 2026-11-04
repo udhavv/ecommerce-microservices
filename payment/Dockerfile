@@ -6,7 +6,7 @@
 # ------------------------------------------------------------------------------
 # Stage 1: Dependencies Builder
 # ------------------------------------------------------------------------------
-FROM node:20-alpine AS deps
+FROM node:26-alpine AS deps
 
 WORKDIR /app
 
@@ -19,7 +19,7 @@ RUN npm ci --omit=dev --ignore-scripts
 # ------------------------------------------------------------------------------
 # Stage 2: Production Runner
 # ------------------------------------------------------------------------------
-FROM node:20-alpine AS runner
+FROM node:26-alpine AS runner
 
 WORKDIR /app
 

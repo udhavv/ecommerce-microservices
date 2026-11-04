@@ -1,0 +1,47 @@
+name: Full Stack Docker Compose Integration CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - 'docker-compose.yml'
+      - 'gateway/docker-compose.yml'
+      - '.github/workflows/stack-integration-ci.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'docker-compose.yml'
+      - 'gateway/docker-compose.yml'
+      - '.github/workflows/stack-integration-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-compose:
+    name: Validate Docker Compose Stack Configuration
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Prepare Sample Environment Files for Verification
+        run: |
+          for svc in auth product inventory orders payment review_section; do
+            if [ ! -f "$svc/.env" ] && [ -f "$svc/.env.example" ]; then
+              cp "$svc/.env.example" "$svc/.env"
+            elif [ ! -f "$svc/.env" ]; then
+              touch "$svc/.env"
+            fi
+          done
+
+      - name: Validate Root Docker Compose Configuration
+        run: |
+          docker compose config --quiet
+          echo "Root docker-compose.yml is valid."
+
+      - name: Validate Gateway Docker Compose Configuration
+        run: |
+          docker compose -f gateway/docker-compose.yml config --quiet
+          echo "Gateway docker-compose.yml is valid."

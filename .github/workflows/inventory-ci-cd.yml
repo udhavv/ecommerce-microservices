@@ -1,0 +1,159 @@
+name: Inventory Microservice CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - 'inventory/**'
+      - '.github/workflows/inventory-ci-cd.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'inventory/**'
+      - '.github/workflows/inventory-ci-cd.yml'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # ============================================================================
+  # 1. Test & Quality Checks
+  # ============================================================================
+  test:
+    name: Run Quality & Syntax Checks
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: inventory
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'inventory/package-lock.json'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Verify JavaScript Syntax & Entrypoint Integrity
+        run: |
+          node --check src/index.js
+          echo "Inventory microservice entrypoint syntax verified successfully."
+
+      - name: Run Test Suite (if configured)
+        run: npm run --if-present test
+
+  # ============================================================================
+  # 2. Build & Verify Docker Image
+  # ============================================================================
+  build-docker:
+    name: Build & Verify Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Production Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./inventory
+          file: ./inventory/Dockerfile
+          push: false
+          tags: inventory-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # 3. Push Image to GHCR & Deploy to Render (main branch only)
+  # ============================================================================
+  publish-and-deploy:
+    name: Push to GHCR & Deploy to Render
+    needs: build-docker
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Convert repository name to lowercase
+        id: repo_name
+        run: |
+          echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+
+      - name: Extract Docker metadata (tags/labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.repo_name.outputs.REPO_LOWER }}/inventory-service
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Build and Push Docker Image to GHCR
+        uses: docker/build-push-action@v5
+        with:
+          context: ./inventory
+          file: ./inventory/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trigger Render Deployment
+        env:
+          RENDER_HOOK_URL: ${{ secrets.RENDER_INVENTORY_DEPLOY_HOOK_URL || secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          # Clean whitespace, linebreaks, and accidental surrounding quotes
+          CLEAN_HOOK=$(echo "$RENDER_HOOK_URL" | tr -d '\r\n"' | xargs)
+
+          if [ -z "$CLEAN_HOOK" ]; then
+            echo "::warning::RENDER_INVENTORY_DEPLOY_HOOK_URL (or RENDER_DEPLOY_HOOK_URL) secret is not set!"
+            echo "Skipping Render deployment step. To enable automatic deployments, set RENDER_INVENTORY_DEPLOY_HOOK_URL in GitHub Repository Settings -> Secrets and variables -> Actions"
+            exit 0
+          fi
+
+          if [[ ! "$CLEAN_HOOK" =~ ^https?:// ]]; then
+            echo "::error::RENDER_INVENTORY_DEPLOY_HOOK_URL is not a valid HTTP URL!"
+            exit 1
+          fi
+
+          MASKED_HOOK=$(echo "$CLEAN_HOOK" | sed -E 's/(key=)[^&]+/\1***/g')
+          echo "Triggering Render deployment at: $MASKED_HOOK"
+
+          RESPONSE=$(curl -s -S -w "\n%{http_code}" -X POST "$CLEAN_HOOK")
+          HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "Render response status: $HTTP_STATUS"
+          echo "Render response body: $BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "Render deployment triggered successfully!"
+          else
+            echo "::error::Failed to trigger Render deployment (HTTP $HTTP_STATUS)."
+            exit 1
+          fi

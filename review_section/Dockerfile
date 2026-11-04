@@ -1,12 +1,12 @@
 # ==============================================================================
 # Production Dockerfile for Review & Customer Feedback Microservice
 # ==============================================================================
-FROM node:20-alpine AS deps
+FROM node:26-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts
 
-FROM node:20-alpine AS runner
+FROM node:26-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=4005

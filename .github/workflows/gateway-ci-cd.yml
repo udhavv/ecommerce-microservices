@@ -1,0 +1,87 @@
+name: Kong API Gateway CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - 'gateway/**'
+      - '.github/workflows/gateway-ci-cd.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'gateway/**'
+      - '.github/workflows/gateway-ci-cd.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  # ============================================================================
+  # 1. Validate Kong Declarative Configuration
+  # ============================================================================
+  validate:
+    name: Validate Kong Declarative Configuration
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Validate kong.yml Syntax with Kong CLI
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/gateway/kong.yml:/etc/kong/kong.yml:ro \
+            kong:3.9.4 kong config parse /etc/kong/kong.yml
+          echo "Kong declarative configuration (kong.yml) is valid."
+
+      - name: Validate kong.local.yml Syntax
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/gateway/kong.local.yml:/etc/kong/kong.yml:ro \
+            kong:3.9.4 kong config parse /etc/kong/kong.yml
+          echo "Kong local declarative configuration (kong.local.yml) is valid."
+
+  # ============================================================================
+  # 2. Deploy Gateway to Render (main branch only)
+  # ============================================================================
+  deploy:
+    name: Deploy Gateway to Render
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Render Deployment
+        env:
+          RENDER_HOOK_URL: ${{ secrets.RENDER_GATEWAY_DEPLOY_HOOK_URL || secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          # Clean whitespace, linebreaks, and accidental surrounding quotes
+          CLEAN_HOOK=$(echo "$RENDER_HOOK_URL" | tr -d '\r\n"' | xargs)
+
+          if [ -z "$CLEAN_HOOK" ]; then
+            echo "::warning::RENDER_GATEWAY_DEPLOY_HOOK_URL (or RENDER_DEPLOY_HOOK_URL) secret is not set!"
+            echo "Skipping Render deployment step. To enable automatic deployments, set RENDER_GATEWAY_DEPLOY_HOOK_URL in GitHub Repository Settings -> Secrets and variables -> Actions"
+            exit 0
+          fi
+
+          if [[ ! "$CLEAN_HOOK" =~ ^https?:// ]]; then
+            echo "::error::RENDER_GATEWAY_DEPLOY_HOOK_URL is not a valid HTTP URL!"
+            exit 1
+          fi
+
+          MASKED_HOOK=$(echo "$CLEAN_HOOK" | sed -E 's/(key=)[^&]+/\1***/g')
+          echo "Triggering Render deployment at: $MASKED_HOOK"
+
+          RESPONSE=$(curl -s -S -w "\n%{http_code}" -X POST "$CLEAN_HOOK")
+          HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "Render response status: $HTTP_STATUS"
+          echo "Render response body: $BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "Render deployment triggered successfully!"
+          else
+            echo "::error::Failed to trigger Render deployment (HTTP $HTTP_STATUS)."
+            exit 1
+          fi
