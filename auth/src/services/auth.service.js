@@ -15,6 +15,9 @@ import {
 } from './email.service.js';
 import logger from '../utils/logger.js';
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+
 const PASSWORD_ROUNDS = 12;
 
 const hashToken = (token) =>
@@ -89,6 +92,13 @@ export async function registerUser({
 
   if (normalizedEmail.length > 254 || name.length > 100) {
     throw new AuthError('Email or display name is too long');
+  }
+
+   if (!EMAIL_REGEX.test(email.trim())) {
+    throw new AuthError(
+      "Invalid email format",
+      400
+    );
   }
 
   if (password.length < 8 || Buffer.byteLength(password, 'utf8') > 72) {
