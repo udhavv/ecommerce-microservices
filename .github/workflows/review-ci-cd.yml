@@ -47,6 +47,9 @@ jobs:
           node --check src/index.js
           echo "Review microservice entrypoint syntax verified successfully."
 
+      - name: Run Test Suite (Unit & Integration)
+        run: npm test
+
   # ============================================================================
   # 2. Build & Verify Docker Image
   # ============================================================================

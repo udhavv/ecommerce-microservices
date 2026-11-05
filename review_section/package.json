@@ -8,7 +8,9 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "db:init": "node database/init.js",
-    "test": "node test/integration.test.js"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js src/__tests__/unit --runInBand",
+    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js src/__tests__/integration --runInBand"
   },
   "keywords": [
     "microservices",
@@ -40,6 +42,17 @@
     "zod": "^4.6.6"
   },
   "devDependencies": {
-    "nodemon": "^3.1.9"
+    "jest": "^30.5.2",
+    "nodemon": "^3.1.9",
+    "supertest": "^7.3.1"
+  },
+  "jest": {
+    "testMatch": [
+      "<rootDir>/src/__tests__/**/*.test.js"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "<rootDir>/src/__tests__/helpers/"
+    ]
   }
 }
