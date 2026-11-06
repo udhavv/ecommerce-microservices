@@ -63,29 +63,6 @@ High-performance product, catalog, and inventory pricing microservice for the e-
 
 ---
 
-## ⚙️ Environment Variables
-
-Defined in `.env`:
-
-```env
-PORT=4001
-NODE_ENV=development
-VERSION=1.0.0
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=hellowpin1
-DB_NAME=test1
-DATABASE_URL="postgresql://postgres:hellowpin1@localhost:5432/test1"
-LOG_LEVEL=info
-FRONTEND_URL_DEVELOPMENT=http://localhost:3000
-PRODUCTION_FRONTEND_URL=http://localhost:3000
-GRAFANA_CLOUD_LOKI_URL=https://logs-prod-028.grafana.net/loki/api/v1/push
-GRAFANA_CLOUD_LOKI_USER=1828443
-GRAFANA_CLOUD_API_TOKEN=...
-```
-
----
 
 ## 🚀 Running the Service
 

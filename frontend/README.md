@@ -39,11 +39,6 @@ Next.js 16 frontend application written with **TypeScript**, **Redux Toolkit**, 
 
 ## ⚙️ Configuration
 
-Environment variables in `.env.local`:
-
-```env
-NEXT_PUBLIC_AUTH_API_URL=http://localhost:4000/api/auth
-```
 
 ---
 
