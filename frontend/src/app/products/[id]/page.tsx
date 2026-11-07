@@ -546,51 +546,53 @@ function ProductDetailContent({ params }: ProductPageProps) {
                   </span>
                 </div>
 
-                {/* Live Inventory Status */}
-                {inventory ? (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Boxes className="h-4 w-4 text-indigo-600" />
-                        <span className="text-xs font-bold uppercase tracking-wider text-slate-700">Inventory Status</span>
-                      </div>
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-extrabold ${
-                          inventory.quantity_available > inventory.low_stock_threshold
-                            ? 'bg-emerald-100 text-emerald-800'
+                {/* Live Inventory Status (Visible only to the seller / admin) */}
+                {canManage && (
+                  inventory ? (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Boxes className="h-4 w-4 text-indigo-600" />
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-700">Inventory Status</span>
+                        </div>
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-extrabold ${
+                            inventory.quantity_available > inventory.low_stock_threshold
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : inventory.quantity_available > 0
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          {inventory.quantity_available > inventory.low_stock_threshold
+                            ? `In Stock (${inventory.quantity_available} units)`
                             : inventory.quantity_available > 0
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-rose-100 text-rose-800'
-                        }`}
-                      >
-                        {inventory.quantity_available > inventory.low_stock_threshold
-                          ? `In Stock (${inventory.quantity_available} units)`
-                          : inventory.quantity_available > 0
-                          ? `Low Stock: Only ${inventory.quantity_available} left!`
-                          : 'Out of Stock'}
-                      </span>
-                    </div>
+                            ? `Low Stock: Only ${inventory.quantity_available} left!`
+                            : 'Out of Stock'}
+                        </span>
+                      </div>
 
-                    <div className="grid grid-cols-3 gap-2 text-center pt-1 text-xs">
-                      <div className="rounded-xl bg-white p-2 border border-slate-100 shadow-2xs">
-                        <span className="text-[10px] text-slate-400 block font-medium">Available</span>
-                        <span className="font-extrabold text-slate-900 text-sm">{inventory.quantity_available}</span>
-                      </div>
-                      <div className="rounded-xl bg-white p-2 border border-slate-100 shadow-2xs">
-                        <span className="text-[10px] text-slate-400 block font-medium">Reserved</span>
-                        <span className="font-extrabold text-slate-900 text-sm">{inventory.quantity_reserved}</span>
-                      </div>
-                      <div className="rounded-xl bg-white p-2 border border-slate-100 shadow-2xs">
-                        <span className="text-[10px] text-slate-400 block font-medium">SKU</span>
-                        <span className="font-mono text-[11px] text-slate-600 truncate block">{inventory.sku || 'N/A'}</span>
+                      <div className="grid grid-cols-3 gap-2 text-center pt-1 text-xs">
+                        <div className="rounded-xl bg-white p-2 border border-slate-100 shadow-2xs">
+                          <span className="text-[10px] text-slate-400 block font-medium">Available</span>
+                          <span className="font-extrabold text-slate-900 text-sm">{inventory.quantity_available}</span>
+                        </div>
+                        <div className="rounded-xl bg-white p-2 border border-slate-100 shadow-2xs">
+                          <span className="text-[10px] text-slate-400 block font-medium">Reserved</span>
+                          <span className="font-extrabold text-slate-900 text-sm">{inventory.quantity_reserved}</span>
+                        </div>
+                        <div className="rounded-xl bg-white p-2 border border-slate-100 shadow-2xs">
+                          <span className="text-[10px] text-slate-400 block font-medium">SKU</span>
+                          <span className="font-mono text-[11px] text-slate-600 truncate block">{inventory.sku || 'N/A'}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
-                    <Boxes className="h-4 w-4 text-slate-400" />
-                    <span>Inventory tracking ready</span>
-                  </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
+                      <Boxes className="h-4 w-4 text-slate-400" />
+                      <span>Inventory tracking ready</span>
+                    </div>
+                  )
                 )}
 
                 {/* Purchase Button */}
