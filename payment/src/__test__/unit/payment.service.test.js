@@ -998,3 +998,517 @@
 //     expect(result).toBeDefined();
 //   });
 // });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// payment.servic// src/__test__/unit/payment.service.test.js
+import { jest } from '@jest/globals';
+import { AppError } from '../../middleware/errorHandler.js';
+
+// 1. Mock dependencies before importing the service
+jest.unstable_mockModule('../../config/db.js', () => ({
+  query: jest.fn(),
+  withTransaction: jest.fn((callback) => {
+    const mockClient = {
+      query: jest.fn(),
+    };
+    return callback(mockClient);
+  }),
+}));
+
+jest.unstable_mockModule('../../services/mockGateway.js', () => ({
+  default: {
+    charge: jest.fn(),
+    refund: jest.fn(),
+  },
+}));
+
+jest.unstable_mockModule('../../services/order.client.js', () => ({
+  default: {
+    getOrder: jest.fn(),
+    markOrderAsPaid: jest.fn(),
+  },
+}));
+
+jest.unstable_mockModule('../../services/outbox.service.js', () => ({
+  default: {
+    recordEvent: jest.fn(),
+  },
+}));
+
+jest.unstable_mockModule('../../events/publishers/payment.publisher.js', () => ({
+  default: {
+    publishPaymentSuccessful: jest.fn().mockResolvedValue(true),
+    publishPaymentFailed: jest.fn().mockResolvedValue(true),
+    publishPaymentRefunded: jest.fn().mockResolvedValue(true),
+  },
+}));
+
+jest.unstable_mockModule('../../utils/logger.js', () => ({
+  default: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
+
+// Dynamic import after mocks are registered
+const { query, withTransaction } = await import('../../config/db.js');
+const { default: mockGateway } = await import('../../services/mockGateway.js');
+const { default: orderClient } = await import('../../services/order.client.js');
+const { default: outboxService } = await import('../../services/outbox.service.js');
+const { default: paymentPublisher } = await import('../../events/publishers/payment.publisher.js');
+const { paymentService } = await import('../../services/payment.service.js');
+
+describe('PaymentService Unit Tests', () => {
+  const mockUser = { id: 'usr-100', roles: ['customer'] };
+  const mockAdmin = { id: 'adm-999', roles: ['admin'] };
+
+  const validOrder = {
+    id: 1,
+    order_number: 'ORD-2026-0001',
+    user_id: 'usr-100',
+    total_amount: '99.99',
+    currency: 'USD',
+    status: 'PENDING',
+    payment_status: 'PENDING',
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Default fallback so query(...) always resolves to { rows: [] }
+    query.mockResolvedValue({ rows: [] });
+  });
+
+  // =========================================================================
+  // processPayment()
+  // =========================================================================
+  describe('processPayment', () => {
+    const paymentData = {
+      order_id: 1,
+      amount: '99.99',
+      currency: 'USD',
+      payment_method: 'MOCK_CARD',
+      idempotency_key: 'idem-key-123',
+    };
+
+    it('should return existing payment if idempotency key is already cached', async () => {
+      const existingPayment = { id: 10, idempotency_key: 'idem-key-123', status: 'CAPTURED' };
+      query.mockResolvedValueOnce({ rows: [existingPayment] });
+
+      const result = await paymentService.processPayment(mockUser, paymentData);
+
+      expect(query).toHaveBeenCalledWith(
+        'SELECT * FROM payments WHERE idempotency_key = $1',
+        ['idem-key-123']
+      );
+      expect(result).toEqual(existingPayment);
+      expect(orderClient.getOrder).not.toHaveBeenCalled();
+      expect(mockGateway.charge).not.toHaveBeenCalled();
+    });
+
+    it('should throw 400 if order status is CANCELLED or FAILED', async () => {
+      orderClient.getOrder.mockResolvedValueOnce({ ...validOrder, status: 'CANCELLED' });
+
+      await expect(paymentService.processPayment(mockUser, paymentData)).rejects.toThrow(
+        "Cannot pay for an order with status 'CANCELLED'"
+      );
+    });
+
+    it('should throw 400 if order is already paid', async () => {
+      orderClient.getOrder.mockResolvedValueOnce({ ...validOrder, payment_status: 'PAID' });
+      console.log('data;- ', paymentService.processPayment)
+
+
+      await expect(paymentService.processPayment(mockUser, paymentData)).rejects.toThrow(
+        'is already paid'
+      );
+    });
+
+    it('should throw 403 if user is neither owner of the order nor an admin', async () => {
+      orderClient.getOrder.mockResolvedValueOnce({ ...validOrder, user_id: 'different-user' });
+
+      await expect(paymentService.processPayment(mockUser, paymentData)).rejects.toThrow(
+        'Forbidden: You can only make payments for your own orders.'
+      );
+    });
+
+    it('should throw 400 if charge amount does not match order total amount', async () => {
+      orderClient.getOrder.mockResolvedValueOnce(validOrder);
+
+      const mismatchedData = { ...paymentData, amount: '50.00' };
+
+      await expect(paymentService.processPayment(mockUser, mismatchedData)).rejects.toThrow(
+        'does not match order total'
+      );
+    });
+
+    it('should successfully process payment, notify order service, record outbox, and publish event', async () => {
+      orderClient.getOrder.mockResolvedValueOnce(validOrder);
+
+      mockGateway.charge.mockResolvedValueOnce({
+        success: true,
+        transaction_id: 'gw-tx-12345',
+        gateway_response: { status: 'approved' },
+      });
+
+      const insertedPayment = {
+        id: 101,
+        payment_reference: 'PAY-20261113-ABCDEF',
+        order_id: 1,
+        order_number: validOrder.order_number,
+        user_id: mockUser.id,
+        amount: 99.99,
+        status: 'CAPTURED',
+        provider_transaction_id: 'gw-tx-12345',
+      };
+
+      const mockClient = {
+        query: jest
+          .fn()
+          .mockResolvedValueOnce({ rows: [insertedPayment] }) // Insert payment
+          .mockResolvedValueOnce({ rows: [] }), // Insert transaction
+      };
+
+      withTransaction.mockImplementationOnce(async (callback) => callback(mockClient));
+      orderClient.markOrderAsPaid.mockResolvedValueOnce({ success: true });
+
+      const result = await paymentService.processPayment(mockUser, paymentData);
+
+      expect(mockGateway.charge).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: 99.99,
+          currency: 'USD',
+          payment_method: 'MOCK_CARD',
+        })
+      );
+      expect(mockClient.query).toHaveBeenCalledTimes(2);
+      expect(outboxService.recordEvent).toHaveBeenCalledWith(
+        mockClient,
+        'Payment',
+        insertedPayment.id,
+        'payment.successful',
+        expect.any(Object)
+      );
+      expect(orderClient.markOrderAsPaid).toHaveBeenCalledWith(validOrder.id, insertedPayment);
+      expect(paymentPublisher.publishPaymentSuccessful).toHaveBeenCalledWith(insertedPayment);
+      expect(result).toEqual(insertedPayment);
+    });
+
+    it('should allow admin to process payment for an order owned by another user', async () => {
+      orderClient.getOrder.mockResolvedValueOnce({ ...validOrder, user_id: 'customer-456' });
+
+      mockGateway.charge.mockResolvedValueOnce({
+        success: true,
+        transaction_id: 'gw-tx-999',
+        gateway_response: { status: 'approved' },
+      });
+
+      const insertedPayment = {
+        id: 102,
+        payment_reference: 'PAY-20261113-XYZ999',
+        order_id: 1,
+        status: 'CAPTURED',
+      };
+
+      const mockClient = {
+        query: jest
+          .fn()
+          .mockResolvedValueOnce({ rows: [insertedPayment] })
+          .mockResolvedValueOnce({ rows: [] }),
+      };
+
+      withTransaction.mockImplementationOnce(async (callback) => callback(mockClient));
+      orderClient.markOrderAsPaid.mockResolvedValueOnce({ success: true });
+
+      const result = await paymentService.processPayment(mockAdmin, paymentData);
+
+      expect(result).toEqual(insertedPayment);
+      expect(orderClient.markOrderAsPaid).toHaveBeenCalled();
+    });
+
+    it('should record failed payment, publish payment.failed event, and throw 400 when gateway charge fails', async () => {
+      orderClient.getOrder.mockResolvedValueOnce(validOrder);
+
+      mockGateway.charge.mockResolvedValueOnce({
+        success: false,
+        error_code: 'INSUFFICIENT_FUNDS',
+        error_message: 'Insufficient balance in card account',
+        transaction_id: 'gw-tx-fail',
+        gateway_response: { status: 'declined' },
+      });
+
+      const failedPayment = {
+        id: 103,
+        payment_reference: 'PAY-20261113-FAILED',
+        order_id: 1,
+        status: 'FAILED',
+        error_code: 'INSUFFICIENT_FUNDS',
+        error_message: 'Insufficient balance in card account',
+      };
+
+      const mockClient = {
+        query: jest
+          .fn()
+          .mockResolvedValueOnce({ rows: [failedPayment] })
+          .mockResolvedValueOnce({ rows: [] }),
+      };
+
+      withTransaction.mockImplementationOnce(async (callback) => callback(mockClient));
+
+      await expect(paymentService.processPayment(mockUser, paymentData)).rejects.toThrow(
+        'Insufficient balance in card account'
+      );
+      expect(paymentPublisher.publishPaymentFailed).toHaveBeenCalledWith(failedPayment);
+      expect(orderClient.markOrderAsPaid).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // refundPayment()
+  // =========================================================================
+  describe('refundPayment', () => {
+    const existingCapturedPayment = {
+      id: 200,
+      payment_reference: 'PAY-20261113-REFUNDME',
+      amount: '150.00',
+      currency: 'USD',
+      status: 'CAPTURED',
+      provider_transaction_id: 'gw-tx-captured',
+      user_id: 'usr-100',
+    };
+
+    it('should throw 403 if non-admin user attempts to authorize a refund', async () => {
+      await expect(paymentService.refundPayment(200, mockUser, { amount: '50.00' })).rejects.toThrow(
+        'Forbidden: Only store administrators can authorize refunds.'
+      );
+    });
+
+    it('should throw 400 if payment status is not CAPTURED', async () => {
+      jest.spyOn(paymentService, 'getPaymentById').mockResolvedValueOnce({
+        ...existingCapturedPayment,
+        status: 'FAILED',
+      });
+
+      await expect(
+        paymentService.refundPayment(200, mockAdmin, { amount: '50.00' })
+      ).rejects.toThrow("Cannot refund a payment with status 'FAILED'");
+    });
+
+    it('should throw 400 if refund amount is negative, zero, or exceeds payment total', async () => {
+      jest.spyOn(paymentService, 'getPaymentById').mockResolvedValueOnce(existingCapturedPayment);
+
+      await expect(
+        paymentService.refundPayment(200, mockAdmin, { amount: '0' })
+      ).rejects.toThrow('Invalid refund amount');
+
+      jest.spyOn(paymentService, 'getPaymentById').mockResolvedValueOnce(existingCapturedPayment);
+
+      await expect(
+        paymentService.refundPayment(200, mockAdmin, { amount: '200.00' })
+      ).rejects.toThrow('Invalid refund amount');
+    });
+
+    it('should execute refund, update payment status to REFUNDED, record outbox event, and publish event', async () => {
+      jest.spyOn(paymentService, 'getPaymentById').mockResolvedValueOnce(existingCapturedPayment);
+
+      mockGateway.refund.mockResolvedValueOnce({
+        success: true,
+        refund_id: 'gw-ref-111',
+      });
+
+      const refundRecord = {
+        id: 1,
+        refund_reference: 'REF-20261113-AAAAAA',
+        payment_id: 200,
+        amount: 50.0,
+        currency: 'USD',
+        reason: 'Customer return',
+        status: 'COMPLETED',
+      };
+
+      const mockClient = {
+        query: jest
+          .fn()
+          .mockResolvedValueOnce({ rows: [refundRecord] }) // Insert refund
+          .mockResolvedValueOnce({ rows: [] }) // Update payments
+          .mockResolvedValueOnce({ rows: [] }), // Insert transaction
+      };
+
+      withTransaction.mockImplementationOnce(async (callback) => callback(mockClient));
+
+      const result = await paymentService.refundPayment(200, mockAdmin, {
+        amount: '50.00',
+        reason: 'Customer return',
+      });
+
+      expect(mockGateway.refund).toHaveBeenCalledWith({
+        payment_id: 200,
+        transaction_id: 'gw-tx-captured',
+        amount: 50.0,
+      });
+      expect(mockClient.query).toHaveBeenCalledTimes(3);
+      expect(outboxService.recordEvent).toHaveBeenCalledWith(
+        mockClient,
+        'Payment',
+        200,
+        'payment.refunded',
+        expect.any(Object)
+      );
+      expect(paymentPublisher.publishPaymentRefunded).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'REFUNDED' }),
+        refundRecord
+      );
+      expect(result.payment.status).toBe('REFUNDED');
+      expect(result.refund).toEqual(refundRecord);
+    });
+  });
+
+  // =========================================================================
+  // getPaymentById()
+  // =========================================================================
+  describe('getPaymentById', () => {
+    it('should throw 404 if payment does not exist', async () => {
+      query.mockResolvedValueOnce({ rows: [] });
+
+      await expect(paymentService.getPaymentById(999, mockUser)).rejects.toThrow(
+        'Payment not found'
+      );
+    });
+
+    it('should throw 403 if requesting user is neither owner nor admin', async () => {
+      query.mockResolvedValueOnce({
+        rows: [{ id: 1, user_id: 'other-user', amount: '10.00' }],
+      });
+
+      await expect(paymentService.getPaymentById(1, mockUser)).rejects.toThrow(
+        'Forbidden: You can only view your own payment records.'
+      );
+    });
+
+    it('should return payment if requesting user is the owner', async () => {
+      const paymentRow = { id: 1, user_id: 'usr-100', amount: '10.00', transactions: [], refunds: [] };
+      query.mockResolvedValueOnce({ rows: [paymentRow] });
+
+      const result = await paymentService.getPaymentById(1, mockUser);
+      expect(result).toEqual(paymentRow);
+    });
+
+    it('should return payment if requesting user is an admin', async () => {
+      const paymentRow = { id: 1, user_id: 'other-user', amount: '10.00', transactions: [], refunds: [] };
+      query.mockResolvedValueOnce({ rows: [paymentRow] });
+
+      const result = await paymentService.getPaymentById(1, mockAdmin);
+      expect(result).toEqual(paymentRow);
+    });
+  });
+
+  // =========================================================================
+  // getPaymentByOrderId()
+  // =========================================================================
+  describe('getPaymentByOrderId', () => {
+    it('should throw 404 if no payment found for order', async () => {
+      query.mockResolvedValueOnce({ rows: [] });
+
+      await expect(paymentService.getPaymentByOrderId(555, mockUser)).rejects.toThrow(
+        'No payment found for order #555'
+      );
+    });
+
+    it('should throw 403 if user is not owner of the payment and not admin', async () => {
+      query.mockResolvedValueOnce({
+        rows: [{ id: 1, order_id: 555, user_id: 'diff-user' }],
+      });
+
+      await expect(paymentService.getPaymentByOrderId(555, mockUser)).rejects.toThrow(
+        'Forbidden: You can only view your own payment records.'
+      );
+    });
+
+    it('should return payment for order if user owns it', async () => {
+      const paymentRow = { id: 1, order_id: 555, user_id: 'usr-100', transactions: [] };
+      query.mockResolvedValueOnce({ rows: [paymentRow] });
+
+      const result = await paymentService.getPaymentByOrderId(555, mockUser);
+      expect(result).toEqual(paymentRow);
+    });
+  });
+
+  // =========================================================================
+  // listPayments()
+  // =========================================================================
+  describe('listPayments', () => {
+    it('should automatically scope payment query to user ID for non-admin customers', async () => {
+      query
+        .mockResolvedValueOnce({ rows: [{ total: 1 }] }) // count query
+        .mockResolvedValueOnce({ rows: [{ id: 1, user_id: 'usr-100' }] }); // data query
+
+      const result = await paymentService.listPayments({ page: 1, limit: 10 }, mockUser);
+
+      expect(query).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining('p.user_id = $1'),
+        ['usr-100']
+      );
+      expect(result.payments).toHaveLength(1);
+      expect(result.pagination).toEqual({
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      });
+    });
+
+    it('should allow admin to filter payments by user_id, status, and order_id', async () => {
+      query
+        .mockResolvedValueOnce({ rows: [{ total: 2 }] })
+        .mockResolvedValueOnce({
+          rows: [
+            { id: 1, status: 'CAPTURED', order_id: 10 },
+            { id: 2, status: 'CAPTURED', order_id: 10 },
+          ],
+        });
+
+      const filters = {
+        user_id: 'target-user',
+        status: 'CAPTURED',
+        order_id: 10,
+        payment_method: 'MOCK_CARD',
+        page: 1,
+        limit: 20,
+        sort_by: 'amount',
+        sort_order: 'asc',
+      };
+
+      const result = await paymentService.listPayments(filters, mockAdmin);
+
+      expect(query).toHaveBeenNthCalledWith(
+        1,
+        expect.stringMatching(/p\.user_id = \$1 AND p\.status = \$2 AND p\.order_id = \$3 AND p\.payment_method = \$4/),
+        ['target-user', 'CAPTURED', 10, 'MOCK_CARD']
+      );
+      expect(result.payments).toHaveLength(2);
+      expect(result.pagination.total).toBe(2);
+    });
+  });
+});
